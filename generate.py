@@ -12,12 +12,12 @@ import tensorflow as tf
 
 from wavenet import WaveNetModel, mu_law_decode, mu_law_encode, audio_reader
 
-SAMPLES = 16000
+SAMPLES = 22050
 TEMPERATURE = 1.0
 LOGDIR = './logdir'
 WAVENET_PARAMS = './wavenet_params.json'
 SAVE_EVERY = None
-SILENCE_THRESHOLD = 0.1
+SILENCE_THRESHOLD = 0.02  # 0.02 for our piano corpus
 
 
 def get_arguments():

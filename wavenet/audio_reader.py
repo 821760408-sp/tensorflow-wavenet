@@ -28,7 +28,7 @@ def get_category_cardinality(files):
 
 def randomize_files(files):
     for file in files:
-        file_index = random.randint(0, (len(files) - 1))
+        file_index = random.randint(0, len(files) - 1)
         yield files[file_index]
 
 
@@ -57,12 +57,16 @@ def load_generic_audio(directory, sample_rate):
             # The file name matches the pattern for containing ids.
             category_id = int(ids[0][0])
         audio, _ = librosa.load(filename, sr=sample_rate, mono=True)
+        # normalize audio
+        audio = librosa.util.normalize(audio)
+        # trim the last 5 seconds to account for music rollout
+        audio = audio[:-5*sample_rate]
         audio = audio.reshape(-1, 1)
         yield audio, filename, category_id
 
 
 def trim_silence(audio, threshold, frame_length=2048):
-    '''Removes silence at the beginning and end of a sample.'''
+    """Removes silence at the beginning and end of a sample."""
     if audio.size < frame_length:
         frame_length = audio.size
     energy = librosa.feature.rmse(audio, frame_length=frame_length)

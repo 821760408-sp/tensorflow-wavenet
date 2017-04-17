@@ -284,7 +284,7 @@ class WaveNetModel(object):
                                                        name="gc_gate"))
 
         if local_condition_batch is not None:
-            weights_lc_filter = variables['lc_filt']
+            weights_lc_filter = variables['lc_filter']
             weights_lc_gate = variables['lc_gate']
             conv_lc_filter = tf.nn.conv1d(local_condition_batch,
                                           weights_lc_filter,

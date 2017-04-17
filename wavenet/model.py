@@ -7,15 +7,15 @@ from .ops import causal_conv, mu_law_encode
 def create_variable(name, shape):
     """Create a convolution filter variable with the specified name and shape,
     and initialize it using Xavier initialition."""
-    initializer = tf.contrib.layers.xavier_initializer_conv2d(dtype=tf.float64)
-    variable = tf.Variable(initializer(shape=shape), name=name, dtype=tf.float64)
+    initializer = tf.contrib.layers.xavier_initializer_conv2d()
+    variable = tf.Variable(initializer(shape=shape), name=name)
     return variable
 
 
 def create_embedding_table(name, shape):
     if shape[0] == shape[1]:
         # Make a one-hot encoding as the initial value.
-        initial_val = np.identity(n=shape[0], dtype=np.float64)
+        initial_val = np.identity(n=shape[0], dtype=np.float32)
         return tf.Variable(initial_val, name=name)
     else:
         return create_variable(name, shape)
@@ -24,7 +24,7 @@ def create_embedding_table(name, shape):
 def create_bias_variable(name, shape):
     """Create a bias variable with the specified name and shape and initialize
     it to zero."""
-    initializer = tf.constant_initializer(value=0.0, dtype=tf.float64)
+    initializer = tf.constant_initializer(value=0.0, dtype=tf.float32)
     return tf.Variable(initializer(shape=shape), name)
 
 
@@ -492,7 +492,7 @@ class WaveNetModel(object):
 
         q = tf.FIFOQueue(
             1,
-            dtypes=tf.float64,
+            dtypes=tf.float32,
             shapes=(self.batch_size, self.quantization_channels))
         init = q.enqueue_many(
             tf.zeros((1, self.batch_size, self.quantization_channels)))
@@ -512,7 +512,7 @@ class WaveNetModel(object):
 
                     q = tf.FIFOQueue(
                         dilation,
-                        dtypes=tf.float64,
+                        dtypes=tf.float32,
                         shapes=(self.batch_size, self.residual_channels))
                     init = q.enqueue_many(
                         tf.zeros((dilation, self.batch_size,
@@ -565,7 +565,7 @@ class WaveNetModel(object):
             encoded = tf.one_hot(
                 input_batch,
                 depth=self.quantization_channels,
-                dtype=tf.float64)
+                dtype=tf.float32)
             shape = [self.batch_size, -1, self.quantization_channels]
             encoded = tf.reshape(encoded, shape)
         return encoded

@@ -109,9 +109,9 @@ class AudioReader(object):
         self.gc_enabled = gc_enabled
         self.lc_enabled = lc_enabled
         self.threads = []
-        self.sample_placeholder = tf.placeholder(dtype=tf.float64, shape=None)
+        self.sample_placeholder = tf.placeholder(dtype=tf.float32, shape=None)
         self.queue = tf.PaddingFIFOQueue(queue_size,
-                                         ['float64'],
+                                         ['float32'],
                                          shapes=[(None, 1)])
         self.enqueue = self.queue.enqueue([self.sample_placeholder])
 
@@ -123,8 +123,8 @@ class AudioReader(object):
 
         if self.lc_enabled:
             self.lc_channels = 1025
-            self.lc_embedding_placeholder = tf.placeholder(dtype=tf.float64, shape=(None, self.lc_channels))
-            self.lc_queue = tf.PaddingFIFOQueue(queue_size, ['float64'], shapes=[(None, self.lc_channels)])
+            self.lc_embedding_placeholder = tf.placeholder(dtype=tf.float32, shape=(None, self.lc_channels))
+            self.lc_queue = tf.PaddingFIFOQueue(queue_size, ['float32'], shapes=[(None, self.lc_channels)])
             self.lc_enqueue = self.lc_queue.enqueue([self.lc_embedding_placeholder])
 
         # TODO Find a better way to check this.
@@ -200,7 +200,7 @@ class AudioReader(object):
                             # for example (1025, 13975) where 13975 is the number of frames in `piece`
                             # hence we need to transpose `magnitudes` then "upsample" it.
                             magnitudes = np.transpose(magnitudes)
-                            lc_embedding = np.zeros(magnitudes.shape, dtype=np.float64)
+                            lc_embedding = np.zeros(magnitudes.shape, dtype=np.float32)
                             for i in range(magnitudes.shape[0]):
                                 nonzero_cnt = len(np.nonzero(magnitudes[i])[0])
                                 num_ind_to_keep = min(nonzero_cnt, 6)  # keeping a maximum of 6 detected pitches

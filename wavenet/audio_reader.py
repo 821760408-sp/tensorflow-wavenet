@@ -68,7 +68,10 @@ def trim_silence(audio, threshold, frame_length=2048):
     """Removes silence at the beginning and end of a sample."""
     if audio.size < frame_length:
         frame_length = audio.size
-    energy = librosa.feature.rmse(audio, frame_length=frame_length)
+    try:
+        energy = librosa.feature.rmse(audio, frame_length=frame_length)
+    except TypeError:
+        energy = librosa.feature.rmse(audio, n_fft=frame_length)
     frames = np.nonzero(energy > threshold)
     indices = librosa.core.frames_to_samples(frames)[1]
 

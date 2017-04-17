@@ -17,23 +17,17 @@ def get_category_cardinality(files):
     max_id = None
     for filename in files:
         matches = id_reg_expression.findall(filename)[0]
-        id, recording_id = [int(id_) for id_ in matches]
-        if min_id is None or id < min_id:
-            min_id = id
-        if max_id is None or id > max_id:
-            max_id = id
+        pianist_id, recording_id = [int(id_) for id_ in matches]
+        if min_id is None or pianist_id < min_id:
+            min_id = pianist_id
+        if max_id is None or pianist_id > max_id:
+            max_id = pianist_id
 
     return min_id, max_id
 
 
-def randomize_files(files):
-    for file in files:
-        file_index = random.randint(0, len(files) - 1)
-        yield files[file_index]
-
-
 def find_files(directory, pattern='*.wav'):
-    '''Recursively finds all files matching the pattern.'''
+    """Recursively finds all files matching the pattern."""
     files = []
     for root, dirnames, filenames in os.walk(directory):
         for filename in fnmatch.filter(filenames, pattern):
@@ -42,7 +36,12 @@ def find_files(directory, pattern='*.wav'):
 
 
 def load_generic_audio(directory, sample_rate):
-    '''Generator that yields audio waveforms from the directory.'''
+    """Generator that yields audio waveforms from the directory."""
+    def randomize_files(fns):
+        for _ in fns:
+            file_index = random.randint(0, len(fns) - 1)
+            yield fns[file_index]
+
     files = find_files(directory)
     id_reg_exp = re.compile(FILE_PATTERN)
     print("files length: {}".format(len(files)))
@@ -78,25 +77,25 @@ def trim_silence(audio, threshold, frame_length=2048):
 
 
 def not_all_have_id(files):
-    ''' Return true iff any of the filenames does not conform to the pattern
-        we require for determining the category id.'''
+    """ Return true iff any of the filenames does not conform to the pattern
+        we require for determining the category id."""
     id_reg_exp = re.compile(FILE_PATTERN)
-    for file in files:
-        ids = id_reg_exp.findall(file)
+    for f in files:
+        ids = id_reg_exp.findall(f)
         if not ids:
             return True
     return False
 
 
 class AudioReader(object):
-    '''Generic background audio reader that preprocesses audio files
-    and enqueues them into a TensorFlow queue.'''
-
+    """Generic background audio reader that preprocesses audio files
+    and enqueues them into a TensorFlow queue."""
     def __init__(self,
                  audio_dir,
                  coord,
                  sample_rate,
                  gc_enabled,
+                 lc_enabled,
                  receptive_field,
                  sample_size=None,
                  silence_threshold=None,
@@ -108,6 +107,7 @@ class AudioReader(object):
         self.receptive_field = receptive_field
         self.silence_threshold = silence_threshold
         self.gc_enabled = gc_enabled
+        self.lc_enabled = lc_enabled
         self.threads = []
         self.sample_placeholder = tf.placeholder(dtype=tf.float32, shape=None)
         self.queue = tf.PaddingFIFOQueue(queue_size,
@@ -120,6 +120,12 @@ class AudioReader(object):
             self.gc_queue = tf.PaddingFIFOQueue(queue_size, ['int32'],
                                                 shapes=[()])
             self.gc_enqueue = self.gc_queue.enqueue([self.id_placeholder])
+
+        if self.lc_enabled:
+            self.lc_channels = 1025
+            self.lc_embedding_placeholder = tf.placeholder(dtype=tf.int32, shape=(None, self.lc_channels))
+            self.lc_queue = tf.PaddingFIFOQueue(queue_size, ['int32'], shapes=[(None, self.lc_channels)])
+            self.lc_enqueue = self.lc_queue.enqueue([self.lc_embedding_placeholder])
 
         # TODO Find a better way to check this.
         # Checking inside the AudioReader's thread makes it hard to terminate
@@ -154,6 +160,9 @@ class AudioReader(object):
     def dequeue_gc(self, num_elements):
         return self.gc_queue.dequeue_many(num_elements)
 
+    def dequeue_lc(self, num_elements):
+        return self.lc_queue.dequeue_many(num_elements)
+
     def thread_main(self, sess):
         stop = False
         # Go through the dataset multiple times
@@ -173,21 +182,36 @@ class AudioReader(object):
                               "threshold, or adjust volume of the audio."
                               .format(filename))
 
-                audio = np.pad(audio, [[self.receptive_field, 0], [0, 0]],
-                               'constant')
+                audio = np.pad(audio, [[self.receptive_field, 0], [0, 0]], 'constant')
 
                 if self.sample_size:
                     # Cut samples into pieces of size receptive_field +
                     # sample_size with receptive_field overlap
-                    while len(audio) > self.receptive_field:
-                        piece = audio[:(self.receptive_field +
-                                        self.sample_size), :]
-                        sess.run(self.enqueue,
-                                 feed_dict={self.sample_placeholder: piece})
+                    window = self.receptive_field + self.sample_size
+                    while len(audio) > window:
+                        piece = audio[:window, :]
+                        sess.run(self.enqueue, feed_dict={self.sample_placeholder: piece})
                         audio = audio[self.sample_size:, :]
                         if self.gc_enabled:
-                            sess.run(self.gc_enqueue, feed_dict={
-                                self.id_placeholder: category_id})
+                            sess.run(self.gc_enqueue, feed_dict={self.id_placeholder: category_id})
+                        if self.lc_enabled:
+                            # DEV -- start
+                            pitches, magnitudes = librosa.piptrack(piece)  # magnitudes here would have shape like
+                            # for example (1025, 13975) where 13975 is the number of frames in `piece`
+                            # hence we need to transpose `magnitudes` then "upsample" it.
+                            magnitudes = np.transpose(magnitudes)
+                            lc_embedding = np.zeros(magnitudes.shape, dtype=np.float64)
+                            for i in range(magnitudes.shape[0]):
+                                nonzero_cnt = len(np.nonzero(magnitudes[i])[0])
+                                num_ind_to_keep = min(nonzero_cnt, 6)  # keeping a maximum of 6 detected pitches
+                                ind_of_largest_mags = \
+                                    np.argpartition(magnitudes[i], -num_ind_to_keep)[-num_ind_to_keep:] \
+                                    if num_ind_to_keep != 0 \
+                                    else []
+                                np.put(lc_embedding[i], ind_of_largest_mags, [1.0])
+                            # the upsampling is done in model::loss
+                            # DEV -- end
+                            sess.run(self.lc_enqueue, feed_dict={self.lc_embedding_placeholder: lc_embedding})
                 else:
                     sess.run(self.enqueue,
                              feed_dict={self.sample_placeholder: audio})

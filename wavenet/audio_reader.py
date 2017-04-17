@@ -123,8 +123,8 @@ class AudioReader(object):
 
         if self.lc_enabled:
             self.lc_channels = 1025
-            self.lc_embedding_placeholder = tf.placeholder(dtype=tf.int32, shape=(None, self.lc_channels))
-            self.lc_queue = tf.PaddingFIFOQueue(queue_size, ['int32'], shapes=[(None, self.lc_channels)])
+            self.lc_embedding_placeholder = tf.placeholder(dtype=tf.float64, shape=(None, self.lc_channels))
+            self.lc_queue = tf.PaddingFIFOQueue(queue_size, ['float64'], shapes=[(None, self.lc_channels)])
             self.lc_enqueue = self.lc_queue.enqueue([self.lc_embedding_placeholder])
 
         # TODO Find a better way to check this.

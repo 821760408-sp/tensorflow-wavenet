@@ -141,21 +141,19 @@ class WaveNetModel(object):
                 # which case we also don't do a tf.nn.embedding_lookup.
                 with tf.variable_scope('embeddings'):
                     layer = dict()
-                    layer['gc_embedding'] = create_embedding_table(
-                        'gc_embedding',
-                        [self.global_condition_cardinality,
-                         self.global_condition_channels])
+                    layer['gc_embedding'] = create_embedding_table('gc_embedding',
+                                                                   [self.global_condition_cardinality,
+                                                                    self.global_condition_channels])
                     var['embeddings'] = layer
 
             with tf.variable_scope('causal_layer'):
                 layer = dict()
                 initial_channels = self.quantization_channels
                 initial_filter_width = self.filter_width
-                layer['filter'] = create_variable(
-                    'filter',
-                    [initial_filter_width,
-                     initial_channels,
-                     self.residual_channels])
+                layer['filter'] = create_variable('filter',
+                                                  [initial_filter_width,
+                                                   initial_channels,
+                                                   self.residual_channels])
                 var['causal_layer'] = layer
 
             var['dilated_stack'] = list()
@@ -163,78 +161,59 @@ class WaveNetModel(object):
                 for i, dilation in enumerate(self.dilations):
                     with tf.variable_scope('layer{}'.format(i)):
                         current = dict()
-                        current['filter'] = create_variable(
-                            'filter',
-                            [self.filter_width,
-                             self.residual_channels,
-                             self.dilation_channels])
-                        current['gate'] = create_variable(
-                            'gate',
-                            [self.filter_width,
-                             self.residual_channels,
-                             self.dilation_channels])
-                        current['dense'] = create_variable(
-                            'dense',
-                            [1,
-                             self.dilation_channels,
-                             self.residual_channels])
-                        current['skip'] = create_variable(
-                            'skip',
-                            [1,
-                             self.dilation_channels,
-                             self.skip_channels])
+                        current['filter'] = create_variable('filter',
+                                                            [self.filter_width,
+                                                             self.residual_channels,
+                                                             self.dilation_channels])
+                        current['gate'] = create_variable('gate',
+                                                          [self.filter_width,
+                                                           self.residual_channels,
+                                                           self.dilation_channels])
+                        current['dense'] = create_variable('dense',
+                                                           [1,
+                                                            self.dilation_channels,
+                                                            self.residual_channels])
+                        current['skip'] = create_variable('skip',
+                                                          [1,
+                                                           self.dilation_channels,
+                                                           self.skip_channels])
 
                         if self.global_condition_channels is not None:
-                            current['gc_gateweights'] = create_variable(
-                                'gc_gate',
-                                [1, self.global_condition_channels,
-                                 self.dilation_channels])
-                            current['gc_filtweights'] = create_variable(
-                                'gc_filter',
-                                [1, self.global_condition_channels,
-                                 self.dilation_channels])
+                            current['gc_filt'] = create_variable('gc_filter',
+                                                                 [1,
+                                                                  self.global_condition_channels,
+                                                                  self.dilation_channels])
+                            current['gc_gate'] = create_variable('gc_gate',
+                                                                 [1,
+                                                                  self.global_condition_channels,
+                                                                  self.dilation_channels])
 
                         if self.local_condition_channels is not None:
-                            current['lc_filtweights'] = create_variable(
-                                'lc_filter',
-                                [1, self.local_condition_channels, self.dilation_channels]  # 1x1 conv
-                            )
-                            current['lc_gateweights'] = create_variable(
-                                'lc_gate',
-                                [1, self.local_condition_channels, self.dilation_channels]
-                            )
+                            current['lc_filt'] = create_variable('lc_filter',
+                                                                 [1,
+                                                                  self.local_condition_channels,
+                                                                  self.dilation_channels])  # 1x1 conv
+                            current['lc_gate'] = create_variable('lc_gate',
+                                                                 [1,
+                                                                  self.local_condition_channels,
+                                                                  self.dilation_channels])
 
                         if self.use_biases:
-                            current['filter_bias'] = create_bias_variable(
-                                'filter_bias',
-                                [self.dilation_channels])
-                            current['gate_bias'] = create_bias_variable(
-                                'gate_bias',
-                                [self.dilation_channels])
-                            current['dense_bias'] = create_bias_variable(
-                                'dense_bias',
-                                [self.residual_channels])
-                            current['skip_bias'] = create_bias_variable(
-                                'slip_bias',
-                                [self.skip_channels])
-
+                            current['filter_bias'] = create_bias_variable('filter_bias', [self.dilation_channels])
+                            current['gate_bias'] = create_bias_variable('gate_bias', [self.dilation_channels])
+                            current['dense_bias'] = create_bias_variable('dense_bias', [self.residual_channels])
+                            current['skip_bias'] = create_bias_variable('slip_bias', [self.skip_channels])
                         var['dilated_stack'].append(current)
 
             with tf.variable_scope('postprocessing'):
                 current = dict()
-                current['postprocess1'] = create_variable(
-                    'postprocess1',
-                    [1, self.skip_channels, self.skip_channels])
-                current['postprocess2'] = create_variable(
-                    'postprocess2',
-                    [1, self.skip_channels, self.quantization_channels])
+                current['postprocess1'] = create_variable('postprocess1', [1, self.skip_channels, self.skip_channels])
+                current['postprocess2'] = create_variable('postprocess2',
+                                                          [1, self.skip_channels, self.quantization_channels])
                 if self.use_biases:
-                    current['postprocess1_bias'] = create_bias_variable(
-                        'postprocess1_bias',
-                        [self.skip_channels])
-                    current['postprocess2_bias'] = create_bias_variable(
-                        'postprocess2_bias',
-                        [self.quantization_channels])
+                    current['postprocess1_bias'] = create_bias_variable('postprocess1_bias', [self.skip_channels])
+                    current['postprocess2_bias'] = create_bias_variable('postprocess2_bias',
+                                                                        [self.quantization_channels])
                 var['postprocessing'] = current
 
         return var
@@ -291,32 +270,38 @@ class WaveNetModel(object):
         conv_gate = causal_conv(input_batch, weights_gate, dilation)
 
         if global_condition_batch is not None:
-            weights_gc_filter = variables['gc_filtweights']
-            conv_filter = conv_filter + tf.nn.conv1d(global_condition_batch,
-                                                     weights_gc_filter,
-                                                     stride=1,
-                                                     padding="SAME",
-                                                     name="gc_filter")
-            weights_gc_gate = variables['gc_gateweights']
-            conv_gate = conv_gate + tf.nn.conv1d(global_condition_batch,
-                                                 weights_gc_gate,
-                                                 stride=1,
-                                                 padding="SAME",
-                                                 name="gc_gate")
+            weights_gc_filter = variables['gc_filter']
+            conv_filter = tf.add(conv_filter, tf.nn.conv1d(global_condition_batch,
+                                                           weights_gc_filter,
+                                                           stride=1,
+                                                           padding="SAME",
+                                                           name="gc_filter"))
+            weights_gc_gate = variables['gc_gate']
+            conv_gate = tf.add(conv_gate, tf.nn.conv1d(global_condition_batch,
+                                                       weights_gc_gate,
+                                                       stride=1,
+                                                       padding="SAME",
+                                                       name="gc_gate"))
 
         if local_condition_batch is not None:
-            weights_lc_filter = variables['lc_filtweights']
-            weights_lc_gate = variables['lc_gateweights']
-            conv_filter = conv_filter + tf.nn.conv1d(local_condition_batch,
-                                                     weights_lc_filter,
-                                                     stride=1,
-                                                     padding='SAME',
-                                                     name='lc_filter')
-            conv_gate = conv_gate + tf.nn.conv1d(local_condition_batch,
-                                                 weights_lc_gate,
-                                                 stride=1,
-                                                 padding='SAME',
-                                                 name='lc_gate')
+            weights_lc_filter = variables['lc_filt']
+            weights_lc_gate = variables['lc_gate']
+            conv_lc_filter = tf.nn.conv1d(local_condition_batch,
+                                          weights_lc_filter,
+                                          stride=1,
+                                          padding='SAME',
+                                          name='lc_filter')
+            # TODO: this just can't be right...
+            conv_lc_filter = tf.slice(conv_lc_filter, [0, 0, 0], [-1, tf.shape(conv_filter)[1], -1])
+            conv_filter = tf.add(conv_filter, conv_lc_filter)
+            conv_lc_gate = tf.nn.conv1d(local_condition_batch,
+                                        weights_lc_gate,
+                                        stride=1,
+                                        padding='SAME',
+                                        name='lc_gate')
+            # TODO: this just can't be right...
+            conv_lc_gate = tf.slice(conv_lc_gate, [0, 0, 0], [-1, tf.shape(conv_gate)[1], -1])
+            conv_gate = tf.add(conv_gate, conv_lc_gate)
 
         if self.use_biases:
             filter_bias = variables['filter_bias']
@@ -674,14 +659,12 @@ class WaveNetModel(object):
                                       [self.batch_size, -1, self.local_condition_channels])
             hop_size = 512
             lc_embedding = tf.image.resize_images(lc_embedding,
-                                                  [self.batch_size,
-                                                   tf.shape(lc_embedding)[1] * hop_size],
+                                                  [self.batch_size, tf.shape(lc_embedding)[1] * hop_size],
                                                   method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
 
             # Cut off the last sample of network input to preserve causality.
             network_input_width = tf.shape(network_input)[1] - 1
-            network_input = tf.slice(network_input, [0, 0, 0],
-                                     [-1, network_input_width, -1])
+            network_input = tf.slice(network_input, [0, 0, 0], [-1, network_input_width, -1])
             # TODO: verification
             lc_embedding = tf.slice(lc_embedding, [0, 0, 0], [-1, network_input_width, -1])
 

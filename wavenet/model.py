@@ -8,7 +8,7 @@ def create_variable(name, shape):
     """Create a convolution filter variable with the specified name and shape,
     and initialize it using Xavier initialition."""
     initializer = tf.contrib.layers.xavier_initializer_conv2d(dtype=tf.float64)
-    variable = tf.Variable(initializer(shape=shape), name=name)
+    variable = tf.Variable(initializer(shape=shape), name=name, dtype=tf.float64)
     return variable
 
 

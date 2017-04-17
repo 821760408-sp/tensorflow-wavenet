@@ -675,7 +675,7 @@ class WaveNetModel(object):
             hop_size = 512
             lc_embedding = tf.image.resize_images(lc_embedding,
                                                   [self.batch_size,
-                                                   local_condition_batch.shape[0] * hop_size],
+                                                   tf.shape(lc_embedding)[1] * hop_size],
                                                   method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
 
             # Cut off the last sample of network input to preserve causality.

@@ -60,7 +60,6 @@ def load_generic_audio(directory, sample_rate):
         audio = librosa.util.normalize(audio)
         # trim the last 5 seconds to account for music rollout
         audio = audio[:-5*sample_rate]
-        audio = audio.reshape(-1, 1)
         yield audio, filename, category_id
 
 
@@ -199,6 +198,7 @@ class AudioReader(object):
                             sess.run(self.gc_enqueue, feed_dict={self.id_placeholder: category_id})
                         if self.lc_enabled:
                             # DEV -- start
+                            piece = np.reshape(piece, (piece.shape[0],))  # so that we can run librosa.piptrack()
                             pitches, magnitudes = librosa.piptrack(piece)  # magnitudes here would have shape like
                             # for example (1025, 13975) where 13975 is the number of frames in `piece`
                             # hence we need to transpose `magnitudes` then "upsample" it.

@@ -60,6 +60,7 @@ def load_generic_audio(directory, sample_rate):
         audio = librosa.util.normalize(audio)
         # trim the last 5 seconds to account for music rollout
         audio = audio[:-5*sample_rate]
+        audio = np.reshape(audio, (-1, 1))
         yield audio, filename, category_id
 
 

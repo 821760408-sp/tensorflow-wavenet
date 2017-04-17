@@ -179,7 +179,7 @@ class WaveNetModel(object):
                                                            self.skip_channels])
 
                         if self.global_condition_channels is not None:
-                            current['gc_filt'] = create_variable('gc_filter',
+                            current['gc_filter'] = create_variable('gc_filter',
                                                                  [1,
                                                                   self.global_condition_channels,
                                                                   self.dilation_channels])
@@ -189,7 +189,7 @@ class WaveNetModel(object):
                                                                   self.dilation_channels])
 
                         if self.local_condition_channels is not None:
-                            current['lc_filt'] = create_variable('lc_filter',
+                            current['lc_filter'] = create_variable('lc_filter',
                                                                  [1,
                                                                   self.local_condition_channels,
                                                                   self.dilation_channels])  # 1x1 conv

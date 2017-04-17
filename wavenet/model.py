@@ -24,7 +24,7 @@ def create_embedding_table(name, shape):
 def create_bias_variable(name, shape):
     """Create a bias variable with the specified name and shape and initialize
     it to zero."""
-    initializer = tf.constant_initializer(value=0.0, dtype=tf.float32)
+    initializer = tf.constant_initializer(value=0.0, dtype=tf.float64)
     return tf.Variable(initializer(shape=shape), name)
 
 
@@ -492,7 +492,7 @@ class WaveNetModel(object):
 
         q = tf.FIFOQueue(
             1,
-            dtypes=tf.float32,
+            dtypes=tf.float64,
             shapes=(self.batch_size, self.quantization_channels))
         init = q.enqueue_many(
             tf.zeros((1, self.batch_size, self.quantization_channels)))
@@ -512,7 +512,7 @@ class WaveNetModel(object):
 
                     q = tf.FIFOQueue(
                         dilation,
-                        dtypes=tf.float32,
+                        dtypes=tf.float64,
                         shapes=(self.batch_size, self.residual_channels))
                     init = q.enqueue_many(
                         tf.zeros((dilation, self.batch_size,
@@ -565,7 +565,7 @@ class WaveNetModel(object):
             encoded = tf.one_hot(
                 input_batch,
                 depth=self.quantization_channels,
-                dtype=tf.float32)
+                dtype=tf.float64)
             shape = [self.batch_size, -1, self.quantization_channels]
             encoded = tf.reshape(encoded, shape)
         return encoded

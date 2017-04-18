@@ -263,11 +263,11 @@ def main():
                     global_condition_batch=gc_id_batch,
                     local_condition_batch=lc_embedding_batch,
                     l2_regularization_strength=args.l2_regularization_strength)
-    # TODO: del line 293-296 and uncomment 267-270
-    # global_step = tf.Variable(0, name='global_step', trainable=False)
-    # learning_rate = tf.train.exponential_decay(args.learning_rate, global_step, 2500, 0.9, staircase=True)
-    # optimizer = optimizer_factory[args.optimizer](learning_rate=learning_rate, momentum=args.momentum)
-    # optim = optimizer.minimize(loss, global_step=global_step, var_list=tf.trainable_variables())
+    # TODO: `global_step` not intilized to 0 as a halfway hack
+    global_step = tf.Variable(14050, name='global_step', trainable=False)
+    learning_rate = tf.train.exponential_decay(args.learning_rate, global_step, 2500, 0.9, staircase=True)
+    optimizer = optimizer_factory[args.optimizer](learning_rate=learning_rate, momentum=args.momentum)
+    optim = optimizer.minimize(loss, global_step=global_step, var_list=tf.trainable_variables())
 
     # Set up logging for TensorBoard.
     writer = tf.summary.FileWriter(logdir)
@@ -280,7 +280,7 @@ def main():
     init = tf.global_variables_initializer()
     sess.run(init)
 
-    # Saver for storing checkpoints of the model.
+    # # Saver for storing checkpoints of the model.
     saver = tf.train.Saver(var_list=tf.trainable_variables(), max_to_keep=args.max_checkpoints)
 
     try:
@@ -289,12 +289,6 @@ def main():
             # The first training step will be saved_global_step + 1,
             # therefore we put -1 here for new or overwritten trainings.
             saved_global_step = -1
-        # TODO: since we added learning rate decay halfway into training, we hacked up the declaration here
-        global_step = tf.Variable(saved_global_step, name='global_step', trainable=False)
-        learning_rate = tf.train.exponential_decay(args.learning_rate, global_step, 2500, 0.9, staircase=True)
-        optimizer = optimizer_factory[args.optimizer](learning_rate=learning_rate, momentum=args.momentum)
-        trainable = tf.trainable_variables()
-        optim = optimizer.minimize(loss, global_step=global_step, var_list=trainable)
 
     except:
         print("Something went wrong while restoring checkpoint. "

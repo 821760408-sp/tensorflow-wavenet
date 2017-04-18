@@ -293,7 +293,8 @@ def main():
         global_step = tf.Variable(saved_global_step, name='global_step', trainable=False)
         learning_rate = tf.train.exponential_decay(args.learning_rate, global_step, 2500, 0.9, staircase=True)
         optimizer = optimizer_factory[args.optimizer](learning_rate=learning_rate, momentum=args.momentum)
-        optim = optimizer.minimize(loss, global_step=global_step, var_list=tf.trainable_variables())
+        trainable = tf.trainable_variables()
+        optim = optimizer.minimize(loss, global_step=global_step, var_list=trainable)
 
     except:
         print("Something went wrong while restoring checkpoint. "

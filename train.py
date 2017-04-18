@@ -22,7 +22,7 @@ from wavenet import WaveNetModel, AudioReader, optimizer_factory
 BATCH_SIZE = 1
 DATA_DIRECTORY = '/scratch/yg1349/solo-piano-classical-corpus'
 LOGDIR_ROOT = './logdir'
-CHECKPOINT_EVERY = 50
+CHECKPOINT_EVERY = 500
 NUM_STEPS = int(1e5)
 LEARNING_RATE = 1e-3
 WAVENET_PARAMS = './wavenet_params.json'
@@ -263,11 +263,11 @@ def main():
                     global_condition_batch=gc_id_batch,
                     local_condition_batch=lc_embedding_batch,
                     l2_regularization_strength=args.l2_regularization_strength)
-    optimizer = optimizer_factory[args.optimizer](
-                    learning_rate=args.learning_rate,
-                    momentum=args.momentum)
-    trainable = tf.trainable_variables()
-    optim = optimizer.minimize(loss, var_list=trainable)
+    # TODO: del line 293-296 and uncomment 267-270
+    # global_step = tf.Variable(0, name='global_step', trainable=False)
+    # learning_rate = tf.train.exponential_decay(args.learning_rate, global_step, 2500, 0.9, staircase=True)
+    # optimizer = optimizer_factory[args.optimizer](learning_rate=learning_rate, momentum=args.momentum)
+    # optim = optimizer.minimize(loss, global_step=global_step, var_list=tf.trainable_variables())
 
     # Set up logging for TensorBoard.
     writer = tf.summary.FileWriter(logdir)
@@ -289,6 +289,11 @@ def main():
             # The first training step will be saved_global_step + 1,
             # therefore we put -1 here for new or overwritten trainings.
             saved_global_step = -1
+        # TODO: since we added learning rate decay halfway into training, we hacked up the declaration here
+        global_step = tf.Variable(saved_global_step, name='global_step', trainable=False)
+        learning_rate = tf.train.exponential_decay(args.learning_rate, global_step, 2500, 0.9, staircase=True)
+        optimizer = optimizer_factory[args.optimizer](learning_rate=learning_rate, momentum=args.momentum)
+        optim = optimizer.minimize(loss, global_step=global_step, var_list=tf.trainable_variables())
 
     except:
         print("Something went wrong while restoring checkpoint. "
@@ -304,7 +309,7 @@ def main():
     try:
         for step in range(saved_global_step + 1, args.num_steps):
             start_time = time.time()
-            if args.store_metadata and step % 50 == 0:
+            if args.store_metadata and step % args.checkpoint_every == 0:
                 # Slow run that stores extra information for debugging.
                 print('Storing metadata')
                 run_options = tf.RunOptions(

@@ -1,5 +1,6 @@
 from __future__ import division
 
+import numpy as np
 import tensorflow as tf
 
 
@@ -61,26 +62,21 @@ def causal_conv(value, filter_, dilation, name='causal_conv'):
         return result
 
 
-def mu_law_encode(audio, quantization_channels):
+def mu_law_encode(audio, quantization_channels=256):
     """Quantizes waveform amplitudes."""
     with tf.name_scope('encode'):
-        mu = tf.to_float(quantization_channels - 1)
-        # Perform mu-law companding transformation (ITU-T, 1988).
-        # Minimum operation is here to deal with rare large amplitudes caused
-        # by resampling.
-        safe_audio_abs = tf.minimum(tf.abs(audio), 1.0)
-        magnitude = tf.log1p(mu * safe_audio_abs) / tf.log1p(mu)
-        signal = tf.sign(audio) * magnitude
-        # Quantize signal to the specified number of levels.
-        return tf.to_int32((signal + 1) / 2 * mu + 0.5)
+        mu = quantization_channels - 1
+        out = tf.sign(audio) * tf.log(1 + mu * tf.abs(audio)) / np.log(1 + mu)
+        out = tf.cast(tf.floor(out * 128), tf.int8)
+        return out
 
 
-def mu_law_decode(output, quantization_channels):
+def mu_law_decode(x, quantization_channels=256):
     """Recovers waveform from quantized values."""
     with tf.name_scope('decode'):
         mu = quantization_channels - 1
-        # Map values back to [-1, 1].
-        signal = 2 * (tf.to_float(output) / mu) - 1
-        # Perform inverse of mu-law transformation.
-        magnitude = (1 / mu) * ((1 + mu)**abs(signal) - 1)
-        return tf.sign(signal) * magnitude
+        x = tf.cast(x, tf.float32)
+        out = (x + 0.5) * 2. / (mu + 1)
+        out = tf.sign(out) / mu * ((1 + mu)**tf.abs(out) - 1)
+        out = tf.where(tf.equal(x, 0), x, out)
+        return out

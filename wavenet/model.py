@@ -1,15 +1,9 @@
+from __future__ import division
+
 import numpy as np
 import tensorflow as tf
 
-from .ops import causal_conv, mu_law_encode
-
-
-def create_variable(name, shape):
-    """Create a convolution filter variable with the specified name and shape,
-    and initialize it using Xavier initialition."""
-    initializer = tf.contrib.layers.xavier_initializer_conv2d()
-    variable = tf.Variable(initializer(shape=shape), name=name)
-    return variable
+from .ops import mu_law_encode, conv1d
 
 
 def create_embedding_table(name, shape):
@@ -19,13 +13,6 @@ def create_embedding_table(name, shape):
         return tf.Variable(initial_val, name=name)
     else:
         return create_variable(name, shape)
-
-
-def create_bias_variable(name, shape):
-    """Create a bias variable with the specified name and shape and initialize
-    it to zero."""
-    initializer = tf.constant_initializer(value=0.0, dtype=tf.float32)
-    return tf.Variable(initializer(shape=shape), name)
 
 
 class WaveNetModel(object):
@@ -47,12 +34,9 @@ class WaveNetModel(object):
                  dilations,
                  filter_width,
                  residual_channels,
-                 dilation_channels,
                  skip_channels,
+                 input_channels=1,  # scalar input
                  quantization_channels=2**8,
-                 use_biases=False,
-                 scalar_input=False,
-                 initial_filter_width=32,
                  histograms=False,
                  global_condition_channels=None,
                  global_condition_cardinality=None,
@@ -66,21 +50,13 @@ class WaveNetModel(object):
             filter_width: The samples that are included in each convolution,
                 after dilating.
             residual_channels: How many filters to learn for the residual.
-            dilation_channels: How many filters to learn for the dilated
-                convolution.
             skip_channels: How many filters to learn that contribute to the
                 quantized softmax output.
+            input_channels: How many channels for each input audio sample,
+                i.e. the last dimension of input tensor.
             quantization_channels: How many amplitude values to use for audio
                 quantization and the corresponding one-hot encoding.
                 Default: 256 (8-bit quantization).
-            use_biases: Whether to add a bias layer to each convolution.
-                Default: False.
-            scalar_input: Whether to use the quantized waveform directly as
-                input to the network instead of one-hot encoding it.
-                Default: False.
-            initial_filter_width: The width of the initial filter of the
-                convolution applied to the scalar input. This is only relevant
-                if scalar_input=True.
             histograms: Whether to store histograms in the summary.
                 Default: False.
             global_condition_channels: Number of channels in (embedding
@@ -93,36 +69,115 @@ class WaveNetModel(object):
                 categories, where N = global_condition_cardinality. If None,
                 then the global_condition tensor is regarded as a vector which
                 must have dimension global_condition_channels.
-            local_condition_channels: Here we first try using the pitches of each frame
-            of the audio input, and each pitch has value across 1025 frequency bins
-
+            local_condition_channels: Here we first try using the pitches of 
+            each frame of the audio input, and each pitch has value across 1025 
+            frequency bins
         """
         self.batch_size = batch_size
+        self.input_channels = input_channels
         self.dilations = dilations
         self.filter_width = filter_width
         self.residual_channels = residual_channels
-        self.dilation_channels = dilation_channels
         self.quantization_channels = quantization_channels
-        self.use_biases = use_biases
         self.skip_channels = skip_channels
-        self.scalar_input = scalar_input
-        self.initial_filter_width = initial_filter_width
         self.histograms = histograms
-        self.global_condition_channels = global_condition_channels
+        self.gc_channels = global_condition_channels
         self.global_condition_cardinality = global_condition_cardinality
-        self.local_condition_channels = local_condition_channels
+        self.lc_channels = local_condition_channels
 
-        self.receptive_field = WaveNetModel.calculate_receptive_field(
-            self.filter_width, self.dilations, self.scalar_input,
-            self.initial_filter_width)
+        self.receptive_field = self.calculate_receptive_field(self.filter_width,
+                                                              self.dilations)
         self.variables = self._create_variables()
 
     @staticmethod
-    def calculate_receptive_field(filter_width, dilations, scalar_input,
-                                  initial_filter_width):
+    def calculate_receptive_field(filter_width, dilations):
         receptive_field = (filter_width - 1) * sum(dilations) + 1
         receptive_field += filter_width - 1
         return receptive_field
+
+    @staticmethod
+    def _enc_upsampling_conv(encoding,
+                            audio_length,  # audio size on time dimension
+                            filter_length=1024,  # filter size on time dimension
+                            time_stride=512):  # upsampling factor on time dimension
+
+        with tf.variable_scope('upsampling_conv'):
+            batch_size, enc_length, enc_channels = encoding.get_shape().as_list()
+
+            strides = [1, 1, time_stride, 1]
+            output_length = (enc_length - 1) * time_stride + filter_length
+            output_shape = tf.stack([batch_size, 1, output_length, enc_channels])
+
+            kernel_shape = [1, filter_length, enc_channels, enc_channels]
+            biases_shape = [enc_channels]
+
+            upsamp_weights = tf.get_variable(
+                'weights',
+                kernel_shape,
+                initializer=tf.uniform_unit_scaling_initializer(1.0))
+            upsamp_biases = tf.get_variable(
+                'biases',
+                biases_shape,
+                initializer=tf.constant_initializer(0.0))
+
+            upsamp_conv = tf.nn.conv2d_transpose(
+                encoding,
+                upsamp_weights, output_shape, strides, padding='VALID')
+            output = tf.nn.bias_add(upsamp_conv, upsamp_biases)
+
+            output = tf.reshape(output, [batch_size, output_length, enc_channels])
+            output_sliced = tf.slice(
+                output, [0, 0, 0],
+                tf.stack([-1, audio_length, -1]))
+            output_sliced.set_shape([batch_size, audio_length, enc_channels])
+            return output_sliced
+
+    # especially for global conditioning coz it doesn't algin with audio input
+    # on the time dimension, and needs broadcasting its value to input;
+    # for local conditioning, we've already match their size
+    @staticmethod
+    def _condition(input_batch, encoding, conditioning='global'):
+        """Condition the input on the encoding.
+          :param input_batch: [mb, length, channels] float tensor input
+          :param encoding: [mb, encoding_length, channels] float tensor encoding
+          :param conditioning: 'global' or 'local'
+          :return: output after broadcasting the encoding to x's shape and adding them. 
+        """
+        mb, length, channels = input_batch.get_shape().as_list()
+        enc_mb, enc_length, enc_channels = encoding.get_shape().as_list()
+        assert enc_mb == mb
+        assert enc_channels == channels
+        if conditioning == 'local':
+            assert enc_length == length
+
+        if conditioning == 'global':
+            encoding = tf.reshape(encoding, [mb, enc_length, 1, channels])
+            input_batch = tf.reshape(input_batch, [mb, enc_length, -1, channels])
+            input_batch += encoding
+            input_batch = tf.reshape(input_batch, [mb, length, channels])
+            input_batch.set_shape([mb, length, channels])
+        elif conditioning == 'local':
+            input_batch += encoding
+        else:
+            raise ValueError('`conditioning` must be "global" or "local"')
+        return input_batch
+
+    @staticmethod
+    def _create_conv_layer(fitler_width, in_channels, out_channels):
+        kernel_shape = [fitler_width,
+                        in_channels,
+                        out_channels]
+        biases_shape = [out_channels]
+        return {
+            'weights': tf.get_variable(
+                'weights',
+                kernel_shape,
+                initializer=tf.uniform_unit_scaling_initializer(1.0)),
+            'biases': tf.get_variable(
+                'biases',
+                biases_shape,
+                initializer=tf.constant_initializer(0.0))
+        }
 
     def _create_variables(self):
         """This function creates all variables used by the network.
@@ -141,103 +196,136 @@ class WaveNetModel(object):
                 # which case we also don't do a tf.nn.embedding_lookup.
                 with tf.variable_scope('embeddings'):
                     layer = dict()
-                    layer['gc_embedding'] = create_embedding_table('gc_embedding',
-                                                                   [self.global_condition_cardinality,
-                                                                    self.global_condition_channels])
+                    layer['gc_embedding'] = create_embedding_table(
+                        'gc_embedding',
+                        [self.global_condition_cardinality,
+                        self.global_condition_channels])
                     var['embeddings'] = layer
 
-            with tf.variable_scope('causal_layer'):
-                layer = dict()
-                initial_channels = self.quantization_channels
-                initial_filter_width = self.filter_width
-                layer['filter'] = create_variable('filter',
-                                                  [initial_filter_width,
-                                                   initial_channels,
-                                                   self.residual_channels])
-                var['causal_layer'] = layer
+            # The first causal layer
+            with tf.variable_scope('start_conv'):
+                var['start_conv'] = self._create_conv_layer(
+                    self.filter_width,
+                    self.input_channels,
+                    self.residual_channels
+                )
+
+            # Create first skip connections
+            with tf.variable_scope('skip_start'):
+                var['skip_start'] = self._create_conv_layer(
+                    1,
+                    self.input_channels,
+                    self.skip_channels
+                )
 
             var['dilated_stack'] = list()
             with tf.variable_scope('dilated_stack'):
                 for i, dilation in enumerate(self.dilations):
-                    with tf.variable_scope('layer{}'.format(i)):
+                    with tf.variable_scope('layer{}'.format(i + 1)):
                         current = dict()
-                        current['filter'] = create_variable('filter',
-                                                            [self.filter_width,
-                                                             self.residual_channels,
-                                                             self.dilation_channels])
-                        current['gate'] = create_variable('gate',
-                                                          [self.filter_width,
-                                                           self.residual_channels,
-                                                           self.dilation_channels])
-                        current['dense'] = create_variable('dense',
-                                                           [1,
-                                                            self.dilation_channels,
-                                                            self.residual_channels])
-                        current['skip'] = create_variable('skip',
-                                                          [1,
-                                                           self.dilation_channels,
-                                                           self.skip_channels])
+                        with tf.variable_scope('dilated_conv{}'.format(i + 1)):
+                            # combines `filter` and `gate`
+                            current['dilated_conv'] = self._create_conv_layer(
+                                self.filter_width,
+                                self.residual_channels,
+                                2 * self.residual_channels
+                            )
 
-                        if self.global_condition_channels is not None:
-                            current['gc_filter'] = create_variable('gc_filter',
-                                                                 [1,
-                                                                  self.global_condition_channels,
-                                                                  self.dilation_channels])
-                            current['gc_gate'] = create_variable('gc_gate',
-                                                                 [1,
-                                                                  self.global_condition_channels,
-                                                                  self.dilation_channels])
+                        with tf.variable_scope('residual_conv{}'.format(i + 1)):
+                            # 1x1 residual conv
+                            current['residual_conv'] = self._create_conv_layer(
+                                1,
+                                self.residual_channels,
+                                self.residual_channels
+                            )
 
-                        if self.local_condition_channels is not None:
-                            current['lc_filter'] = create_variable('lc_filter',
-                                                                 [1,
-                                                                  self.local_condition_channels,
-                                                                  self.dilation_channels])  # 1x1 conv
-                            current['lc_gate'] = create_variable('lc_gate',
-                                                                 [1,
-                                                                  self.local_condition_channels,
-                                                                  self.dilation_channels])
+                        with tf.variable_scope('skip_conn{}'.format(i + 1)):
+                            current['skip_conn'] = self._create_conv_layer(
+                                1,
+                                self.residual_channels,
+                                self.skip_channels
+                            )
 
-                        if self.use_biases:
-                            current['filter_bias'] = create_bias_variable('filter_bias', [self.dilation_channels])
-                            current['gate_bias'] = create_bias_variable('gate_bias', [self.dilation_channels])
-                            current['dense_bias'] = create_bias_variable('dense_bias', [self.residual_channels])
-                            current['skip_bias'] = create_bias_variable('slip_bias', [self.skip_channels])
+                        if self.gc_channels is not None:
+                            with tf.variable_scope('gc_conv{}'.format(i + 1)):
+                                # 1x1 learnable linear projection
+                                current['gc_conv'] = self._create_conv_layer(
+                                    1,
+                                    self.gc_channels,
+                                    2 * self.residual_channels
+                                )
+
+                        if self.lc_channels is not None:
+                            with tf.variable_scope('lc_conv{}'.format(i + 1)):
+                                # 1x1 conv
+                                current['lc_conv'] = self._create_conv_layer(
+                                    1,
+                                    self.lc_channels,
+                                    2 * self.residual_channels
+                                )
+
                         var['dilated_stack'].append(current)
 
             with tf.variable_scope('postprocessing'):
-                current = dict()
-                current['postprocess1'] = create_variable('postprocess1', [1, self.skip_channels, self.skip_channels])
-                current['postprocess2'] = create_variable('postprocess2',
-                                                          [1, self.skip_channels, self.quantization_channels])
-                if self.use_biases:
-                    current['postprocess1_bias'] = create_bias_variable('postprocess1_bias', [self.skip_channels])
-                    current['postprocess2_bias'] = create_bias_variable('postprocess2_bias',
-                                                                        [self.quantization_channels])
-                var['postprocessing'] = current
+                # 1x1 conv
+                var['postprocessing'] = self._create_conv_layer(
+                    1,
+                    self.skip_channels,
+                    self.skip_channels
+                )
+
+            if self.gc_channels is not None:
+                with tf.variable_scope('gc_conv_out'):
+                    var['gc_conv_out'] = self._create_conv_layer(
+                        1,
+                        self.gc_channels,
+                        self.skip_channels
+                    )
+
+            if self.lc_channels is not None:
+                with tf.variable_scope('lc_conv_out'):
+                    var['lc_conv_out'] = self._create_conv_layer(
+                        1,
+                        self.lc_channels,
+                        self.skip_channels
+                    )
+
+            with tf.variable_scope('logit'):
+                # Create weights and biases for computing logits
+                var['logit'] = self._create_conv_layer(
+                    1,
+                    self.skip_channels,
+                    self.quantization_channels
+                )
 
         return var
 
-    def _create_causal_layer(self, input_batch):
-        """Creates a single causal convolution layer.
-
-        The layer can change the number of channels.
+    def _create_start_layer(self, input_batch):
+        """Creates the first causal convolution layer and skip connection.
+        :param input_batch: [bs, time, input_channels] tensor input. 
+        :return: the output of the causal convolution and skip connection.
         """
-        with tf.name_scope('causal_layer'):
-            weights_filter = self.variables['causal_layer']['filter']
-            return causal_conv(input_batch, weights_filter, 1)
+        with tf.name_scope('start_conv'):
+            weights = self.variables['start_conv']['weights']
+            biases = self.variables['start_conv']['biases']
+        with tf.name_scope('skip_start'):
+            skip_weights = self.variables['skip_start']['weights']
+            skip_biases = self.variables['skip_start']['biases']
+        return (conv1d(input_batch, weights, biases),
+                conv1d(input_batch, skip_weights, skip_biases))
 
     def _create_dilation_layer(self,
                                input_batch,
+                               skip_connection,
                                layer_index,
                                dilation,
-                               global_condition_batch,
-                               local_condition_batch,
-                               output_width):
+                               gc_batch=None,
+                               lc_batch=None):
         """Creates a single causal dilated convolution layer.
 
         Args:
              input_batch: Input to the dilation layer.
+             skip_connection: The collection of skip connections so far.
              layer_index: Integer indicating which layer this is.
              dilation: Integer specifying the dilation size.
              global_condition_batch: Tensor containing the global data upon
@@ -263,90 +351,152 @@ class WaveNetModel(object):
         """
         variables = self.variables['dilated_stack'][layer_index]
 
-        weights_filter = variables['filter']
-        weights_gate = variables['gate']
+        weights = variables['dilated_conv']['weights']
+        biases = variables['dilated_conv']['biases']
 
-        conv_filter = causal_conv(input_batch, weights_filter, dilation)
-        conv_gate = causal_conv(input_batch, weights_gate, dilation)
+        dilation_out = conv1d(input_batch, weights, biases, dilation)
 
-        if global_condition_batch is not None:
-            weights_gc_filter = variables['gc_filter']
-            conv_filter = tf.add(conv_filter, tf.nn.conv1d(global_condition_batch,
-                                                           weights_gc_filter,
-                                                           stride=1,
-                                                           padding="SAME",
-                                                           name="gc_filter"))
-            weights_gc_gate = variables['gc_gate']
-            conv_gate = tf.add(conv_gate, tf.nn.conv1d(global_condition_batch,
-                                                       weights_gc_gate,
-                                                       stride=1,
-                                                       padding="SAME",
-                                                       name="gc_gate"))
+        if lc_batch is not None:
+            lc_weights = variables['lc_conv']['lc_weights']
+            lc_biases = variables['lc_conv']['lc_biases']
 
-        if local_condition_batch is not None:
-            weights_lc_filter = variables['lc_filter']
-            weights_lc_gate = variables['lc_gate']
-            conv_lc_filter = tf.nn.conv1d(local_condition_batch,
-                                          weights_lc_filter,
-                                          stride=1,
-                                          padding='SAME',
-                                          name='lc_filter')
-            # TODO: this just can't be right...
-            conv_lc_filter = tf.slice(conv_lc_filter, [0, 0, 0], [-1, tf.shape(conv_filter)[1], -1])
-            conv_filter = tf.add(conv_filter, conv_lc_filter)
-            conv_lc_gate = tf.nn.conv1d(local_condition_batch,
-                                        weights_lc_gate,
-                                        stride=1,
-                                        padding='SAME',
-                                        name='lc_gate')
-            # TODO: this just can't be right...
-            conv_lc_gate = tf.slice(conv_lc_gate, [0, 0, 0], [-1, tf.shape(conv_gate)[1], -1])
-            conv_gate = tf.add(conv_gate, conv_lc_gate)
+            dilation_out = self._condition(dilation_out,
+                                           conv1d(lc_batch, lc_weights, lc_biases))
 
-        if self.use_biases:
-            filter_bias = variables['filter_bias']
-            gate_bias = variables['gate_bias']
-            conv_filter = tf.add(conv_filter, filter_bias)
-            conv_gate = tf.add(conv_gate, gate_bias)
+        if gc_batch is not None:
+            gc_weights = variables['gc_conv']['gc_weights']
+            gc_biases = variables['gc_conv']['lc_biases']
 
-        out = tf.tanh(conv_filter) * tf.sigmoid(conv_gate)
+            dilation_out = self._condition(dilation_out,
+                                           conv1d(gc_batch, gc_weights, gc_biases))
+
+        assert dilation_out.get_shape().as_list()[2] % 2 == 0
+        m = dilation_out.get_shape().as_list()[2] // 2
+        do_sigmoid = tf.sigmoid(dilation_out[:, :, :m])  # sigmoid is for gate
+        do_tanh = tf.tanh(dilation_out[:, :, m:])  # tanh is for filter
+        dilation_out = do_sigmoid * do_tanh
 
         # The 1x1 conv to produce the residual output
-        weights_dense = variables['dense']
-        transformed = tf.nn.conv1d(
-            out, weights_dense, stride=1, padding="SAME", name="dense")
+        res_weights = variables['residual_conv']['weights']
+        res_biases = variables['residual_conv']['biases']
+        input_batch += conv1d(dilation_out, res_weights, res_biases)
 
         # The 1x1 conv to produce the skip output
-        skip_cut = tf.shape(out)[1] - output_width
-        out_skip = tf.slice(out, [0, skip_cut, 0], [-1, -1, -1])
-        weights_skip = variables['skip']
-        skip_contribution = tf.nn.conv1d(
-            out_skip, weights_skip, stride=1, padding="SAME", name="skip")
+        skip_weights = variables['skip_conn']['weights']
+        skip_biases = variables['skip_conn']['biases']
+        skip_connection += conv1d(dilation_out, skip_weights, skip_biases)
 
-        if self.use_biases:
-            dense_bias = variables['dense_bias']
-            skip_bias = variables['skip_bias']
-            transformed = transformed + dense_bias
-            skip_contribution = skip_contribution + skip_bias
+        return input_batch, skip_connection
 
-        if self.histograms:
-            layer = 'layer{}'.format(layer_index)
-            tf.histogram_summary(layer + '_filter', weights_filter)
-            tf.histogram_summary(layer + '_gate', weights_gate)
-            tf.histogram_summary(layer + '_dense', weights_dense)
-            tf.histogram_summary(layer + '_skip', weights_skip)
-            if self.use_biases:
-                tf.histogram_summary(layer + '_biases_filter', filter_bias)
-                tf.histogram_summary(layer + '_biases_gate', gate_bias)
-                tf.histogram_summary(layer + '_biases_dense', dense_bias)
-                tf.histogram_summary(layer + '_biases_skip', skip_bias)
+    def _create_network(self,
+                        input_batch,
+                        gc_batch=None,
+                        lc_batch=None):
+        """Construct the WaveNet network.
+        :param input_batch: The [nb, time, channels] right-shifted input tensor.
+        :param gc_batch: 
+        :param lc_batch: 
+        :return: The [time, quantizations] logits computed by the network.
+        """
+        input_batch, skip_connection = self._create_start_layer(input_batch)
 
-        input_cut = tf.shape(input_batch)[1] - tf.shape(transformed)[1]
-        input_batch = tf.slice(input_batch, [0, input_cut, 0], [-1, -1, -1])
+        if gc_batch is not None:
+            # gc_embedding = self._embed_gc(global_condition_batch)
 
-        return skip_contribution, input_batch + transformed
+        if lc_batch is not None:
+            # upsample local conditioning
+            _, input_length, _ = input_batch.get_shape().as_list()
+            lc_batch = self._enc_upsampling_conv(lc_batch, input_length)
 
-    def _generator_conv(self, input_batch, state_batch, weights):
+        # Add all defined dilation layers.
+        with tf.name_scope('dilated_stack'):
+            for layer_index, dilation in enumerate(self.dilations):
+                with tf.name_scope('layer{}'.format(layer_index + 1)):
+                    (input_batch, skip_connection) = self._create_dilation_layer(
+                        input_batch,
+                        skip_connection,
+                        layer_index,
+                        dilation,
+                        gc_batch,
+                        lc_batch
+                    )
+
+        # Perform (+) -> ReLU -> 1x1 conv -> ReLU -> 1x1 conv to
+        # postprocess the output.
+        with tf.name_scope('postprocessing'):
+            skip_connection = tf.nn.relu(skip_connection)
+
+            pp_weights = self.variables['postprocessing']['weights']
+            pp_biases = self.variables['postprocessing']['biases']
+            skip_connection = conv1d(skip_connection, pp_weights, pp_biases)
+
+        # TODO: explain why
+        if gc_batch is not None:
+            gc_weights = self.variables['gc_conv_out']['weights']
+            gc_biases = self.variables['gc_conv_out']['biases']
+            skip_connection = self._condition(
+                skip_connection,
+                conv1d(gc_batch, gc_weights, gc_biases)
+            )
+
+        if lc_batch is not None:
+            lc_weights = self.variables['lc_conv_out']['weights']
+            lc_biases = self.variables['lc_conv_out']['biases']
+            skip_connection = self._condition(
+                skip_connection,
+                conv1d(lc_batch, lc_weights, lc_biases)
+            )
+
+        with tf.name_scope('logit'):
+            skip_connection = tf.nn.relu(skip_connection)
+
+            logit_weights = self.variables['logit']['weights']
+            logit_biases = self.variables['logit']['biases']
+            logits = conv1d(skip_connection, logit_weights, logit_biases)
+            logits = tf.reshape(logits, [-1, 256])
+
+        return logits
+
+    def loss(self,
+             input_batch,
+             gc_batch=None,
+             lc_batch=None,
+             name='wavenet'):
+        """Creates a WaveNet network and returns the autoencoding loss.
+        :param input_batch: The [nb, time] audio input tensor 
+        :param gc_batch: 
+        :param lc_batch: 
+        :param name:
+        :return: Prediction, loss, and quantized input
+        """
+        with tf.name_scope(name):
+            input_quantized = mu_law_encode(input_batch, self.quantization_channels)
+            input_scaled = tf.cast(input_quantized, tf.float32) / 128.0
+            input_scaled = tf.expand_dims(input_scaled, 2)
+
+            logits = self._create_network(input_scaled, gc_batch, lc_batch)
+            probs = tf.nn.softmax(logits, name='softmax')
+            input_indices = tf.cast(tf.reshape(input_quantized, [-1]), tf.int32) + 128
+
+            with tf.name_scope('loss'):
+                loss = tf.reduce_mean(
+                    tf.nn.sparse_softmax_cross_entropy_with_logits(
+                        logits=logits, labels=input_indices, name='nll'),
+                    0,
+                    name='loss')
+
+            return {
+                'predictions': probs,
+                'loss': loss,
+                'eval': {
+                    'nll': loss
+                },
+                'quantized_input': input_quantized
+            }
+
+
+    @staticmethod
+    def _generator_conv(input_batch, state_batch, weights):
         """Perform convolution for a single convolutional processing step."""
         # TODO generalize to filter_width > 2
         past_weights = weights[0, :, :]
@@ -417,56 +567,6 @@ class WaveNetModel(object):
             skip_contribution = skip_contribution + variables['skip_bias']
 
         return skip_contribution, input_batch + transformed
-
-    def _create_network(self, input_batch, global_condition_batch, local_condition_batch):
-        """Construct the WaveNet network."""
-        skip_conn_outputs = []
-        current_layer = input_batch
-
-        current_layer = self._create_causal_layer(current_layer)
-
-        output_width = tf.shape(input_batch)[1] - self.receptive_field + 1
-
-        # Add all defined dilation layers.
-        with tf.name_scope('dilated_stack'):
-            for layer_index, dilation in enumerate(self.dilations):
-                with tf.name_scope('layer{}'.format(layer_index)):
-                    (output, current_layer) = self._create_dilation_layer(current_layer,
-                                                                          layer_index,
-                                                                          dilation,
-                                                                          global_condition_batch,
-                                                                          local_condition_batch,
-                                                                          output_width)
-                    skip_conn_outputs.append(output)
-
-        with tf.name_scope('postprocessing'):
-            # Perform (+) -> ReLU -> 1x1 conv -> ReLU -> 1x1 conv to
-            # postprocess the output.
-            w1 = self.variables['postprocessing']['postprocess1']
-            w2 = self.variables['postprocessing']['postprocess2']
-            if self.use_biases:
-                b1 = self.variables['postprocessing']['postprocess1_bias']
-                b2 = self.variables['postprocessing']['postprocess2_bias']
-
-            if self.histograms:
-                tf.histogram_summary('postprocess1_weights', w1)
-                tf.histogram_summary('postprocess2_weights', w2)
-                if self.use_biases:
-                    tf.histogram_summary('postprocess1_biases', b1)
-                    tf.histogram_summary('postprocess2_biases', b2)
-
-            # We skip connections from the outputs of each layer, adding them all up here.
-            total = sum(skip_conn_outputs)
-            transformed1 = tf.nn.relu(total)
-            conv1 = tf.nn.conv1d(transformed1, w1, stride=1, padding="SAME")
-            if self.use_biases:
-                conv1 = tf.add(conv1, b1)
-            transformed2 = tf.nn.relu(conv1)
-            conv2 = tf.nn.conv1d(transformed2, w2, stride=1, padding="SAME")
-            if self.use_biases:
-                conv2 = tf.add(conv2, b2)
-
-        return conv2
 
     def _create_generator(self, input_batch, global_condition_batch, local_condition_batch):
         """Construct an efficient incremental generator."""
@@ -619,9 +719,6 @@ class WaveNetModel(object):
         if self.filter_width > 2:
             raise NotImplementedError("Incremental generation does not "
                                       "support filter_width > 2.")
-        if self.scalar_input:
-            raise NotImplementedError("Incremental generation does not "
-                                      "support scalar input yet.")
         with tf.name_scope(name):
             encoded = tf.one_hot(waveform, self.quantization_channels)
             encoded = tf.reshape(encoded, [-1, self.quantization_channels])
@@ -635,74 +732,3 @@ class WaveNetModel(object):
                 [tf.shape(proba)[0] - 1, 0],
                 [1, self.quantization_channels])
             return tf.reshape(last, [-1])
-
-    def loss(self,
-             input_batch,
-             global_condition_batch=None,
-             local_condition_batch=None,
-             l2_regularization_strength=None,
-             name='wavenet'):
-        """Creates a WaveNet network and returns the autoencoding loss.
-
-        The variables are all scoped to the given name.
-        """
-        with tf.name_scope(name):
-            # We mu-law encode and quantize the input audioform.
-            encoded_input = mu_law_encode(input_batch,
-                                          self.quantization_channels)
-
-            gc_embedding = self._embed_gc(global_condition_batch)
-            encoded = self._one_hot(encoded_input)
-            network_input = encoded
-            # reshape lc_embedding before upsampling
-            lc_embedding = tf.reshape(local_condition_batch,
-                                      [self.batch_size, -1, self.local_condition_channels])
-            hop_size = 512
-            lc_embedding = tf.image.resize_images(lc_embedding,
-                                                  [self.batch_size, tf.shape(lc_embedding)[1] * hop_size],
-                                                  method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
-
-            # Cut off the last sample of network input to preserve causality.
-            network_input_width = tf.shape(network_input)[1] - 1
-            network_input = tf.slice(network_input, [0, 0, 0], [-1, network_input_width, -1])
-            # TODO: verification
-            lc_embedding = tf.slice(lc_embedding, [0, 0, 0], [-1, network_input_width, -1])
-
-            raw_output = self._create_network(network_input, gc_embedding, lc_embedding)
-
-            with tf.name_scope('loss'):
-                # Cut off the samples corresponding to the receptive field
-                # for the first predicted sample.
-                target_output = tf.slice(
-                    tf.reshape(
-                        encoded,
-                        [self.batch_size, -1, self.quantization_channels]),
-                    [0, self.receptive_field, 0],
-                    [-1, -1, -1])
-                target_output = tf.reshape(target_output,
-                                           [-1, self.quantization_channels])
-                prediction = tf.reshape(raw_output,
-                                        [-1, self.quantization_channels])
-                loss = tf.nn.softmax_cross_entropy_with_logits(
-                    logits=prediction,
-                    labels=target_output)
-                reduced_loss = tf.reduce_mean(loss)
-
-                tf.summary.scalar('loss', reduced_loss)
-
-                if l2_regularization_strength is None:
-                    return reduced_loss
-                else:
-                    # L2 regularization for all trainable parameters
-                    l2_loss = tf.add_n([tf.nn.l2_loss(v)
-                                        for v in tf.trainable_variables()
-                                        if not('bias' in v.name)])
-
-                    # Add the regularization term to the loss
-                    total_loss = (reduced_loss +
-                                  l2_regularization_strength * l2_loss)
-
-                    tf.summary.scalar('l2_loss', l2_loss)
-                    tf.summary.scalar('total_loss', total_loss)
-
-                    return total_loss

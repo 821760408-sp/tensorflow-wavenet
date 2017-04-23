@@ -12,7 +12,8 @@ def create_embedding_table(name, shape):
         initial_val = np.identity(n=shape[0], dtype=np.float32)
         return tf.Variable(initial_val, name=name)
     else:
-        return create_variable(name, shape)
+        initializer = tf.contrib.layers.xavier_initializer_conv2d()
+        return tf.Variable(initializer(shape=shape), name=name)
 
 
 class WaveNetModel(object):
@@ -21,14 +22,14 @@ class WaveNetModel(object):
     Usage (with the architecture as in the DeepMind paper):
         dilations = [2**i for i in range(N)] * M
         filter_width = 2  # Convolutions just use 2 samples.
-        residual_channels = 16  # Not specified in the paper.
-        dilation_channels = 32  # Not specified in the paper.
-        skip_channels = 16      # Not specified in the paper.
+        residual_channels = 128
+        skip_channels = 256
         net = WaveNetModel(batch_size, dilations, filter_width,
                            residual_channels, dilation_channels,
                            skip_channels)
         loss = net.loss(input_batch)
     """
+
     def __init__(self,
                  batch_size,
                  dilations,
@@ -36,11 +37,10 @@ class WaveNetModel(object):
                  residual_channels,
                  skip_channels,
                  input_channels=1,  # scalar input
-                 quantization_channels=2**8,
-                 histograms=False,
-                 global_condition_channels=None,
-                 global_condition_cardinality=None,
-                 local_condition_channels=None):
+                 quantization_channels=2 ** 8,
+                 gc_channels=None,
+                 gc_cardinality=None,
+                 lc_channels=None):
         """Initializes the WaveNet model.
 
         Args:
@@ -57,21 +57,17 @@ class WaveNetModel(object):
             quantization_channels: How many amplitude values to use for audio
                 quantization and the corresponding one-hot encoding.
                 Default: 256 (8-bit quantization).
-            histograms: Whether to store histograms in the summary.
-                Default: False.
-            global_condition_channels: Number of channels in (embedding
+            gc_channels: Number of channels in (embedding
                 size) of global conditioning vector. None indicates there is
                 no global conditioning.
-            global_condition_cardinality: Number of mutually exclusive
+            gc_cardinality: Number of mutually exclusive
                 categories to be embedded in global condition embedding. If
                 not None, then this implies that global_condition tensor
                 specifies an integer selecting which of the N global condition
                 categories, where N = global_condition_cardinality. If None,
                 then the global_condition tensor is regarded as a vector which
                 must have dimension global_condition_channels.
-            local_condition_channels: Here we first try using the pitches of 
-            each frame of the audio input, and each pitch has value across 1025 
-            frequency bins
+            lc_channels: See audio_reader.py for details.
         """
         self.batch_size = batch_size
         self.input_channels = input_channels
@@ -80,10 +76,9 @@ class WaveNetModel(object):
         self.residual_channels = residual_channels
         self.quantization_channels = quantization_channels
         self.skip_channels = skip_channels
-        self.histograms = histograms
-        self.gc_channels = global_condition_channels
-        self.global_condition_cardinality = global_condition_cardinality
-        self.lc_channels = local_condition_channels
+        self.gc_channels = gc_channels
+        self.gc_cardinality = gc_cardinality
+        self.lc_channels = lc_channels
 
         self.receptive_field = self.calculate_receptive_field(self.filter_width,
                                                               self.dilations)
@@ -92,14 +87,14 @@ class WaveNetModel(object):
     @staticmethod
     def calculate_receptive_field(filter_width, dilations):
         receptive_field = (filter_width - 1) * sum(dilations) + 1
-        receptive_field += filter_width - 1
+        # receptive_field += filter_width - 1
         return receptive_field
 
     @staticmethod
     def _enc_upsampling_conv(encoding,
-                            audio_length,  # audio size on time dimension
-                            filter_length=1024,  # filter size on time dimension
-                            time_stride=512):  # upsampling factor on time dimension
+                             audio_length,  # audio size on time dimension
+                             filter_length=1024,  # filter size on time dimension
+                             time_stride=512):  # upsampling factor on time dimension
 
         with tf.variable_scope('upsampling_conv'):
             batch_size, enc_length, enc_channels = encoding.get_shape().as_list()
@@ -187,7 +182,7 @@ class WaveNetModel(object):
         var = dict()
 
         with tf.variable_scope('wavenet'):
-            if self.global_condition_cardinality is not None:
+            if self.gc_cardinality is not None:
                 # We only look up the embedding if we are conditioning on a
                 # set of mutually-exclusive categories. We can also condition
                 # on an already-embedded dense vector, in which case it's
@@ -198,8 +193,7 @@ class WaveNetModel(object):
                     layer = dict()
                     layer['gc_embedding'] = create_embedding_table(
                         'gc_embedding',
-                        [self.global_condition_cardinality,
-                        self.global_condition_channels])
+                        [self.gc_cardinality, self.gc_channels])
                     var['embeddings'] = layer
 
             # The first causal layer
@@ -361,14 +355,16 @@ class WaveNetModel(object):
             lc_biases = variables['lc_conv']['lc_biases']
 
             dilation_out = self._condition(dilation_out,
-                                           conv1d(lc_batch, lc_weights, lc_biases))
+                                           conv1d(lc_batch, lc_weights, lc_biases),
+                                           conditioning='local')
 
         if gc_batch is not None:
             gc_weights = variables['gc_conv']['gc_weights']
             gc_biases = variables['gc_conv']['lc_biases']
 
             dilation_out = self._condition(dilation_out,
-                                           conv1d(gc_batch, gc_weights, gc_biases))
+                                           conv1d(gc_batch, gc_weights, gc_biases),
+                                           conditioning='global')
 
         assert dilation_out.get_shape().as_list()[2] % 2 == 0
         m = dilation_out.get_shape().as_list()[2] // 2
@@ -388,6 +384,26 @@ class WaveNetModel(object):
 
         return input_batch, skip_connection
 
+    def _embed_gc(self, gc):
+        """Returns embedding for global condition.
+        :param gc: Either ID of global condition for
+               tf.nn.embedding_lookup or actual embedding.
+        :return: Embedding or None
+        """
+        embedding = None
+
+        if self.gc_cardinality is None:
+            # Only lookup the embedding if the global condition is presented
+            # as an integer of mutually-exclusive categories ...
+            embedding_table = self.variables['embeddings']['gc_embedding']
+            embedding = tf.nn.embedding_lookup(embedding_table, gc)
+
+        if embedding is not None:
+            embedding = tf.reshape(embedding,
+                                   [self.batch_size, 1, self.gc_channels])
+
+        return embedding
+
     def _create_network(self,
                         input_batch,
                         gc_batch=None,
@@ -401,7 +417,7 @@ class WaveNetModel(object):
         input_batch, skip_connection = self._create_start_layer(input_batch)
 
         if gc_batch is not None:
-            # gc_embedding = self._embed_gc(global_condition_batch)
+            gc_batch = self._embed_gc(gc_batch)
 
         if lc_batch is not None:
             # upsample local conditioning
@@ -431,21 +447,21 @@ class WaveNetModel(object):
             skip_connection = conv1d(skip_connection, pp_weights, pp_biases)
 
         # TODO: explain why
-        if gc_batch is not None:
-            gc_weights = self.variables['gc_conv_out']['weights']
-            gc_biases = self.variables['gc_conv_out']['biases']
-            skip_connection = self._condition(
-                skip_connection,
-                conv1d(gc_batch, gc_weights, gc_biases)
-            )
-
         if lc_batch is not None:
             lc_weights = self.variables['lc_conv_out']['weights']
             lc_biases = self.variables['lc_conv_out']['biases']
             skip_connection = self._condition(
                 skip_connection,
-                conv1d(lc_batch, lc_weights, lc_biases)
-            )
+                conv1d(lc_batch, lc_weights, lc_biases),
+                conditioning='local')
+
+        if gc_batch is not None:
+            gc_weights = self.variables['gc_conv_out']['weights']
+            gc_biases = self.variables['gc_conv_out']['biases']
+            skip_connection = self._condition(
+                skip_connection,
+                conv1d(gc_batch, gc_weights, gc_biases),
+                conditioning='global')
 
         with tf.name_scope('logit'):
             skip_connection = tf.nn.relu(skip_connection)
@@ -493,7 +509,6 @@ class WaveNetModel(object):
                 },
                 'quantized_input': input_quantized
             }
-
 
     @staticmethod
     def _generator_conv(input_batch, state_batch, weights):
@@ -588,13 +603,12 @@ class WaveNetModel(object):
         push_ops.append(push)
 
         current_layer = self._generator_causal_layer(
-                            current_layer, current_state)
+            current_layer, current_state)
 
         # Add all defined dilation layers.
         with tf.name_scope('dilated_stack'):
             for layer_index, dilation in enumerate(self.dilations):
                 with tf.name_scope('layer{}'.format(layer_index)):
-
                     q = tf.FIFOQueue(
                         dilation,
                         dtypes=tf.float32,
@@ -654,43 +668,6 @@ class WaveNetModel(object):
             shape = [self.batch_size, -1, self.quantization_channels]
             encoded = tf.reshape(encoded, shape)
         return encoded
-
-    def _embed_gc(self, global_condition):
-        """Returns embedding for global condition.
-        :param global_condition: Either ID of global condition for
-               tf.nn.embedding_lookup or actual embedding. The latter is
-               experimental.
-        :return: Embedding or None
-        """
-        embedding = None
-        if self.global_condition_cardinality is not None:
-            # Only lookup the embedding if the global condition is presented
-            # as an integer of mutually-exclusive categories ...
-            embedding_table = self.variables['embeddings']['gc_embedding']
-            embedding = tf.nn.embedding_lookup(embedding_table,
-                                               global_condition)
-        elif global_condition is not None:
-            # ... else the global_condition (if any) is already provided
-            # as an embedding.
-
-            # In this case, the number of global_embedding channels must be
-            # equal to the the last dimension of the global_condition tensor.
-            gc_batch_rank = len(global_condition.get_shape())
-            dims_match = (global_condition.get_shape()[gc_batch_rank - 1] ==
-                          self.global_condition_channels)
-            if not dims_match:
-                raise ValueError('Shape of global_condition {} does not'
-                                 ' match global_condition_channels {}.'.
-                                 format(global_condition.get_shape(),
-                                        self.global_condition_channels))
-            embedding = global_condition
-
-        if embedding is not None:
-            embedding = tf.reshape(
-                embedding,
-                [self.batch_size, 1, self.global_condition_channels])
-
-        return embedding
 
     def predict_proba(self, waveform, global_condition=None, local_condition=None, name='wavenet'):
         """Computes the probability distribution of the next sample based on

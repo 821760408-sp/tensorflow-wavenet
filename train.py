@@ -211,99 +211,100 @@ def main():
                 else:
                     lc_batch = None
 
-        # Create network.
-        output_dict = WaveNetModel(
-            batch_size=args.batch_size,
-            dilations=wavenet_params["dilations"],
-            filter_width=wavenet_params["filter_width"],
-            residual_channels=wavenet_params["residual_channels"],
-            skip_channels=wavenet_params["skip_channels"],
-            input_channels=audio_batch.get_shape().as_list()[2],
-            quantization_channels=wavenet_params["quantization_channels"],
-            gc_channels=args.gc_channels,
-            gc_cardinality=reader.gc_cardinality,
-            lc_channels=lc_batch.get_shape().as_list()[2]
-            if lc_batch is not None else None
-        ).loss(input_batch=audio_batch,
-               gc_batch=gc_id_batch,
-               lc_batch=lc_batch)
+        with tf.device('/gpu:0'):
+            # Create network.
+            output_dict = WaveNetModel(
+                batch_size=args.batch_size,
+                dilations=wavenet_params["dilations"],
+                filter_width=wavenet_params["filter_width"],
+                residual_channels=wavenet_params["residual_channels"],
+                skip_channels=wavenet_params["skip_channels"],
+                input_channels=audio_batch.get_shape().as_list()[2],
+                quantization_channels=wavenet_params["quantization_channels"],
+                gc_channels=args.gc_channels,
+                gc_cardinality=reader.gc_cardinality,
+                lc_channels=lc_batch.get_shape().as_list()[2]
+                if lc_batch is not None else None
+            ).loss(input_batch=audio_batch,
+                   gc_batch=gc_id_batch,
+                   lc_batch=lc_batch)
 
-        loss = output_dict['loss']
-        tf.summary.scalar('train_loss', loss)
+            loss = output_dict['loss']
+            tf.summary.scalar('train_loss', loss)
 
-        global_step = tf.get_variable(
-            "global_step", [],
-            tf.int32,
-            initializer=tf.constant_initializer(0),
-            trainable=False)
+            global_step = tf.get_variable(
+                "global_step", [],
+                tf.int32,
+                initializer=tf.constant_initializer(0),
+                trainable=False)
 
-        lr = tf.constant(LEARNING_RATE_SCHEDULE[0])
-        for key, value in LEARNING_RATE_SCHEDULE.iteritems():
-            lr = tf.cond(
-                tf.less(global_step, key), lambda: lr, lambda: tf.constant(value))
-        tf.summary.scalar("learning_rate", lr)
+            lr = tf.constant(LEARNING_RATE_SCHEDULE[0])
+            for key, value in LEARNING_RATE_SCHEDULE.iteritems():
+                lr = tf.cond(
+                    tf.less(global_step, key), lambda: lr, lambda: tf.constant(value))
+            tf.summary.scalar("learning_rate", lr)
 
-        optimizer = optimizer_factory[args.optimizer](learning_rate=lr,
-                                                      momentum=args.momentum)
-        train_op = optimizer.minimize(loss,
-                                      global_step=global_step,
-                                      name='train')
+            optimizer = optimizer_factory[args.optimizer](learning_rate=lr,
+                                                          momentum=args.momentum)
+            train_op = optimizer.minimize(loss,
+                                          global_step=global_step,
+                                          name='train')
 
-        # Set up logging for TensorBoard.
-        writer = tf.summary.FileWriter(logdir)
-        writer.add_graph(tf.get_default_graph())
-        summary_op = tf.summary.merge_all()
+            # Set up logging for TensorBoard.
+            writer = tf.summary.FileWriter(logdir)
+            writer.add_graph(tf.get_default_graph())
+            summary_op = tf.summary.merge_all()
 
-        # Set up session
-        sess = tf.Session(config=tf.ConfigProto(log_device_placement=False))
-        init = tf.global_variables_initializer()
-        sess.run(init)
+            # Set up session
+            sess = tf.Session(config=tf.ConfigProto(log_device_placement=False))
+            init = tf.global_variables_initializer()
+            sess.run(init)
 
-        # Saver for storing checkpoints of the model.
-        saver = tf.train.Saver(tf.trainable_variables())
+            # Saver for storing checkpoints of the model.
+            saver = tf.train.Saver(tf.trainable_variables())
 
-        try:
-            saved_global_step = load(saver, sess, restore_from)
-            if is_overwritten_training or saved_global_step is None:
-                # The first training step will be saved_global_step + 1,
-                # therefore we put -1 here for new or overwritten trainings.
-                saved_global_step = -1
+            try:
+                saved_global_step = load(saver, sess, restore_from)
+                if is_overwritten_training or saved_global_step is None:
+                    # The first training step will be saved_global_step + 1,
+                    # therefore we put -1 here for new or overwritten trainings.
+                    saved_global_step = -1
 
-        except:
-            print("Something went wrong while restoring checkpoint. "
-                  "We will terminate training to avoid accidentally overwriting "
-                  "the previous model.")
-            raise
+            except:
+                print("Something went wrong while restoring checkpoint. "
+                      "We will terminate training to avoid accidentally overwriting "
+                      "the previous model.")
+                raise
 
-        threads = tf.train.start_queue_runners(sess=sess, coord=coord)
-        reader.start_threads(sess)
+            threads = tf.train.start_queue_runners(sess=sess, coord=coord)
+            reader.start_threads(sess)
 
-        step = None
-        last_saved_step = saved_global_step
-        try:
-            for step in range(saved_global_step + 1, args.num_steps):
-                start_time = time.time()
+            step = None
+            last_saved_step = saved_global_step
+            try:
+                for step in range(saved_global_step + 1, args.num_steps):
+                    start_time = time.time()
 
-                summary, loss_value, _ = sess.run([summary_op, loss, train_op])
-                writer.add_summary(summary, step)
+                    summary, loss_value, _ = sess.run([summary_op, loss, train_op])
+                    writer.add_summary(summary, step)
 
-                duration = time.time() - start_time
-                print('step {:d} - loss = {:.3f}, ({:.3f} sec/step)'
-                      .format(step, loss_value, duration))
+                    duration = time.time() - start_time
+                    print('step {:d} - loss = {:.3f}, ({:.3f} sec/step)'
+                          .format(step, loss_value, duration))
 
-                if step % args.checkpoint_every == 0:
+                    if step % args.checkpoint_every == 0:
+                        save(saver, sess, logdir, step)
+                        last_saved_step = step
+
+            except KeyboardInterrupt:
+                # Introduce a line break after ^C is displayed so save message
+                # is on its own line.
+                print()
+            finally:
+                if step > last_saved_step:
                     save(saver, sess, logdir, step)
-                    last_saved_step = step
-
-        except KeyboardInterrupt:
-            # Introduce a line break after ^C is displayed so save message
-            # is on its own line.
-            print()
-        finally:
-            if step > last_saved_step:
-                save(saver, sess, logdir, step)
-            coord.request_stop()
-            coord.join(threads)
+                coord.request_stop()
+                coord.join(threads)
 
 
 if __name__ == '__main__':

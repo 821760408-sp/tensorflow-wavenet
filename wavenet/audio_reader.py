@@ -107,9 +107,10 @@ class AudioReader(object):
         self.gc_enabled = gc_enabled
         self.lc_enabled = lc_enabled
         self.threads = []
-        self.sample_placeholder = tf.placeholder(dtype=tf.float32, shape=None)
+        self.sample_placeholder = tf.placeholder(tf.float32,
+                                                 shape=(self.sample_size, 1))
         self.queue = tf.PaddingFIFOQueue(queue_size, ['float32'],
-                                         shapes=[(None, 1)])
+                                         shapes=[(self.sample_size, 1)])
         self.enqueue = self.queue.enqueue([self.sample_placeholder])
 
         if self.gc_enabled:
@@ -169,7 +170,10 @@ class AudioReader(object):
                     stop = True
                     break
 
-                crop = tf.random_crop(audio, [self.sample_size, audio.shape[1]])
+                offset = np.random.randint(0, audio.shape[0] - self.sample_size)
+                crop = audio[offset:offset + self.sample_size, :]
+                assert crop.shape[0] == self.sample_size
+                assert crop.shape[1] == audio.shape[1]
 
                 sess.run(self.enqueue, {self.sample_placeholder: crop})
 
@@ -178,8 +182,8 @@ class AudioReader(object):
 
                 if self.lc_enabled:
                     # reshape piece into 1-D audio signal
-                    audio = np.reshape(audio, (audio.shape[0],))
-                    lc = self._midi_notes_encoding(audio)
+                    crop = np.reshape(crop, (crop.shape[0],))
+                    lc = self._midi_notes_encoding(crop)
                     sess.run(self.lc_enqueue, {self.lc_placeholder: lc})
 
     def start_threads(self, sess, n_threads=1):
@@ -209,6 +213,9 @@ class AudioReader(object):
                 magnitudes[i], -num_ind_to_keep)[-num_ind_to_keep:] \
                 if num_ind_to_keep != 0 else []
             # convert the largest pitches to midi notes
+            overtone_limit = librosa.midi_to_hz(96)[0]
+            ind_of_largest_pitches = filter(
+                lambda x: pitches[i, x] <= overtone_limit, ind_of_largest_pitches)
             midi_notes = librosa.hz_to_midi(pitches[i, ind_of_largest_pitches]).round()
             # normalize magnitudes of pitches
             midi_mags = magnitudes[i, ind_of_largest_pitches] / \

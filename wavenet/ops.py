@@ -29,11 +29,11 @@ def time_to_batch(x, dilation):
     with tf.name_scope('time_to_batch'):
         shape = x.get_shape().as_list()
         y = tf.reshape(x, [
-            shape[0], shape[1] / dilation, dilation, shape[2]
+            shape[0], shape[1] // dilation, dilation, shape[2]
         ])
         y = tf.transpose(y, [0, 2, 1, 3])
         y = tf.reshape(y, [
-            shape[0] * dilation, shape[1] / dilation, shape[2]
+            shape[0] * dilation, shape[1] // dilation, shape[2]
         ])
         y.set_shape([
             mul_or_none(shape[0], dilation), mul_or_none(shape[1], 1. / dilation),
@@ -45,9 +45,9 @@ def time_to_batch(x, dilation):
 def batch_to_time(x, dilation):
     with tf.name_scope('batch_to_time'):
         shape = x.get_shape().as_list()
-        y = tf.reshape(x, [shape[0] / dilation, dilation, shape[1], shape[2]])
+        y = tf.reshape(x, [shape[0] // dilation, dilation, shape[1], shape[2]])
         y = tf.transpose(y, [0, 2, 1, 3])
-        y = tf.reshape(y, [shape[0] / dilation, shape[1] * dilation, shape[2]])
+        y = tf.reshape(y, [shape[0] // dilation, shape[1] * dilation, shape[2]])
         y.set_shape([mul_or_none(shape[0], 1. / dilation),
                      mul_or_none(shape[1], dilation),
                      shape[2]])
@@ -73,14 +73,13 @@ def conv1d(x,
     assert length % dilation == 0
     assert num_input_channels == filt_in_channels
 
-    strides = [1, 1, 1]
     padding = 'VALID' if causal else 'SAME'
 
     x_ttb = time_to_batch(x, dilation)
     if filter_width > 1 and causal:
         x_ttb = tf.pad(x_ttb, [[0, 0], [filter_width - 1, 0], [0, 0]])
 
-    y = tf.nn.conv1d(x_ttb, filt, strides, padding)
+    y = tf.nn.conv1d(x_ttb, filt, 1, padding)
     y = tf.nn.bias_add(y, biases)
     y = batch_to_time(y, dilation)
     y.set_shape([batch_size, length, filt_out_channels])

@@ -264,8 +264,8 @@ def main():
     summary_op = tf.summary.merge_all()
 
     # Set up session
-    sess = tf.Session(config=tf.ConfigProto(log_device_placement=False))#,
-                                            # device_count={'GPU': 0}))
+    sess = tf.Session(config=tf.ConfigProto(log_device_placement=False,
+                                            operation_timeout_in_ms=20000))
     init = tf.global_variables_initializer()
     sess.run(init)
 

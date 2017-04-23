@@ -95,12 +95,18 @@ class WaveNetModel(object):
                              audio_length,  # audio size on time dimension
                              filter_length=1024,  # filter size on time dimension
                              time_stride=512):  # upsampling factor on time dimension
-
+        """Upsample local conditioning encoding to match time dim. of audio  
+        :param encoding: [mb, timeframe, channels] Local conditionining encoding
+        :param audio_length: Length of time dimension of audio 
+        :param filter_length: transpose conv. filter length
+        :param time_stride: stride along time dimension
+        :return: upsampled local conditioning encoding
+        """
         with tf.variable_scope('upsampling_conv'):
-            batch_size, enc_length, enc_channels = encoding.get_shape().as_list()
-
+            batch_size, _, enc_channels = encoding.get_shape().as_list()
+            shape = tf.shape(encoding)
             strides = [1, 1, time_stride, 1]
-            output_length = (enc_length - 1) * time_stride + filter_length
+            output_length = (shape[1] - 1) * time_stride + filter_length
             output_shape = tf.stack([batch_size, 1, output_length, enc_channels])
 
             kernel_shape = [1, filter_length, enc_channels, enc_channels]
@@ -115,6 +121,7 @@ class WaveNetModel(object):
                 biases_shape,
                 initializer=tf.constant_initializer(0.0))
 
+            encoding = tf.reshape(encoding, [batch_size, 1, shape[1], enc_channels])
             upsamp_conv = tf.nn.conv2d_transpose(
                 encoding,
                 upsamp_weights, output_shape, strides, padding='VALID')
@@ -351,16 +358,16 @@ class WaveNetModel(object):
         dilation_out = conv1d(input_batch, weights, biases, dilation)
 
         if lc_batch is not None:
-            lc_weights = variables['lc_conv']['lc_weights']
-            lc_biases = variables['lc_conv']['lc_biases']
+            lc_weights = variables['lc_conv']['weights']
+            lc_biases = variables['lc_conv']['biases']
 
             dilation_out = self._condition(dilation_out,
                                            conv1d(lc_batch, lc_weights, lc_biases),
                                            conditioning='local')
 
         if gc_batch is not None:
-            gc_weights = variables['gc_conv']['gc_weights']
-            gc_biases = variables['gc_conv']['lc_biases']
+            gc_weights = variables['gc_conv']['weights']
+            gc_biases = variables['gc_conv']['biases']
 
             dilation_out = self._condition(dilation_out,
                                            conv1d(gc_batch, gc_weights, gc_biases),
@@ -488,7 +495,7 @@ class WaveNetModel(object):
         with tf.name_scope(name):
             input_quantized = mu_law_encode(input_batch, self.quantization_channels)
             input_scaled = tf.cast(input_quantized, tf.float32) / 128.0
-            input_scaled = tf.expand_dims(input_scaled, 2)
+            assert len(input_scaled.get_shape()) == 3
 
             logits = self._create_network(input_scaled, gc_batch, lc_batch)
             probs = tf.nn.softmax(logits, name='softmax')

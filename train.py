@@ -19,8 +19,7 @@ import tensorflow as tf
 from wavenet import WaveNetModel, AudioReader, optimizer_factory
 
 BATCH_SIZE = 1
-# DATA_DIRECTORY = '/scratch/yg1349/solo-piano-classical-corpus'
-DATA_DIRECTORY = '/Users/multimedia/machine-learning-datasets/solo-piano-classical-corpus'
+DATA_DIRECTORY = '/scratch/yg1349/solo-piano-classical-corpus'
 LOGDIR_ROOT = './logdir'
 CHECKPOINT_EVERY = 50
 NUM_STEPS = int(2e5)
@@ -264,10 +263,13 @@ def main():
     summary_op = tf.summary.merge_all()
 
     # Set up session
-    sess = tf.Session(config=tf.ConfigProto(log_device_placement=False,
-                                            operation_timeout_in_ms=20000))
-    init = tf.global_variables_initializer()
-    sess.run(init)
+    try:
+
+        sess = tf.Session(config=tf.ConfigProto(operation_timeout_in_ms=20000))
+        init = tf.global_variables_initializer()
+        sess.run(init)
+    except tf.errors.DeadlineExceededError:
+        print("Something went wrong with the queue")
 
     # Saver for storing checkpoints of the model.
     saver = tf.train.Saver(tf.trainable_variables())

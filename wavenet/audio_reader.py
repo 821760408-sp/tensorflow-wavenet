@@ -181,12 +181,9 @@ class AudioReader(object):
                 fetches.append(self.enqueue)
                 feed_dict[self.sample_placeholder] = crop
 
-                # sess.run(self.enqueue, {self.sample_placeholder: crop})
-
                 if self.gc_enabled:
                     fetches.append(self.gc_enqueue)
                     feed_dict[self.id_placeholder] = category_id
-                    # sess.run(self.gc_enqueue, {self.id_placeholder: category_id})
 
                 if self.lc_enabled:
                     # reshape piece into 1-D audio signal
@@ -194,7 +191,7 @@ class AudioReader(object):
                     lc = self._midi_notes_encoding(crop)
                     fetches.append(self.lc_enqueue)
                     feed_dict[self.lc_placeholder] = lc
-                    # sess.run(self.lc_enqueue, {self.lc_placeholder: lc})
+
                 sess.run(fetches, feed_dict=feed_dict)
 
     def start_threads(self, sess, n_threads=1):

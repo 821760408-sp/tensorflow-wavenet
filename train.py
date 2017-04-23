@@ -60,8 +60,7 @@ def get_arguments():
                              'This creates the new model under the dated directory '
                              'in --logdir_root. '
                              'Cannot use with --logdir.')
-    parser.add_argument('--checkpoint_every', type=int,
-                        default=CHECKPOINT_EVERY,
+    parser.add_argument('--checkpoint_every', type=int, default=CHECKPOINT_EVERY,
                         help='How many steps to save each checkpoint after. Default: '
                              + str(CHECKPOINT_EVERY) + '.')
     parser.add_argument('--num_steps', type=int, default=NUM_STEPS,
@@ -199,9 +198,6 @@ def main():
                     args.data_dir,
                     coord,
                     sample_rate=wavenet_params['sample_rate'],
-                    sample_size=WaveNetModel.calculate_receptive_field(
-                        wavenet_params['filter_width'],
-                        wavenet_params['dilations']),
                     gc_enabled=gc_enabled,
                     lc_enabled=lc_enabled
                 )
@@ -227,7 +223,7 @@ def main():
             gc_channels=args.gc_channels,
             gc_cardinality=reader.gc_cardinality,
             lc_channels=lc_batch.get_shape().as_list()[2]
-            if lc_batch else None
+            if lc_batch is not None else None
         ).loss(input_batch=audio_batch,
                gc_batch=gc_id_batch,
                lc_batch=lc_batch)

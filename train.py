@@ -24,7 +24,17 @@ LOGDIR_ROOT = './logdir'
 CHECKPOINT_EVERY = 250
 NUM_STEPS = int(2e5)
 LEARNING_RATE_SCHEDULE = {
-    0: 2e-4,
+    # 0: 2e-4,
+    # 90000: 4e-4 / 3,
+    # 120000: 6e-5,
+    # 150000: 4e-5,
+    # 180000: 2e-5,
+    # 210000: 6e-6,
+    # 240000: 2e-6,
+    0: 1e-3,
+    10000: 6e-4,
+    30000: 4e-4,
+    60000: 4e-4 * 2 / 3,
     90000: 4e-4 / 3,
     120000: 6e-5,
     150000: 4e-5,
@@ -190,26 +200,26 @@ def main():
 
         # Load raw waveform from corpus.
         # Run the Reader on the CPU
-        # with tf.device('/cpu:0'):
-        with tf.name_scope('create_inputs'):
-            gc_enabled = args.gc_channels is not None
-            lc_enabled = args.lc_channels is not None
-            reader = AudioReader(
-                args.data_dir,
-                coord,
-                sample_rate=wavenet_params['sample_rate'],
-                gc_enabled=gc_enabled,
-                lc_enabled=lc_enabled
-            )
-            audio_batch = reader.dequeue(args.batch_size)
-            if gc_enabled:
-                gc_id_batch = reader.dequeue_gc(args.batch_size)
-            else:
-                gc_id_batch = None
-            if lc_enabled:
-                lc_batch = reader.dequeue_lc(args.batch_size)
-            else:
-                lc_batch = None
+        with tf.device('/cpu:0'):
+            with tf.name_scope('create_inputs'):
+                gc_enabled = args.gc_channels is not None
+                lc_enabled = args.lc_channels is not None
+                reader = AudioReader(
+                    args.data_dir,
+                    coord,
+                    sample_rate=wavenet_params['sample_rate'],
+                    gc_enabled=gc_enabled,
+                    lc_enabled=lc_enabled
+                )
+                audio_batch = reader.dequeue(args.batch_size)
+                if gc_enabled:
+                    gc_id_batch = reader.dequeue_gc(args.batch_size)
+                else:
+                    gc_id_batch = None
+                if lc_enabled:
+                    lc_batch = reader.dequeue_lc(args.batch_size)
+                else:
+                    lc_batch = None
 
         # Create network.
         output_dict = WaveNetModel(

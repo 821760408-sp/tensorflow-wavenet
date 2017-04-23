@@ -170,21 +170,32 @@ class AudioReader(object):
                     stop = True
                     break
 
+                fetches = list()
+                feed_dict = dict()
+
                 offset = np.random.randint(0, audio.shape[0] - self.sample_size)
                 crop = audio[offset:offset + self.sample_size, :]
                 assert crop.shape[0] == self.sample_size
                 assert crop.shape[1] == audio.shape[1]
 
-                sess.run(self.enqueue, {self.sample_placeholder: crop})
+                fetches.append(self.enqueue)
+                feed_dict[self.sample_placeholder] = crop
+
+                # sess.run(self.enqueue, {self.sample_placeholder: crop})
 
                 if self.gc_enabled:
-                    sess.run(self.gc_enqueue, {self.id_placeholder: category_id})
+                    fetches.append(self.gc_enqueue)
+                    feed_dict[self.id_placeholder] = category_id
+                    # sess.run(self.gc_enqueue, {self.id_placeholder: category_id})
 
                 if self.lc_enabled:
                     # reshape piece into 1-D audio signal
                     crop = np.reshape(crop, (crop.shape[0],))
                     lc = self._midi_notes_encoding(crop)
-                    sess.run(self.lc_enqueue, {self.lc_placeholder: lc})
+                    fetches.append(self.lc_enqueue)
+                    feed_dict[self.lc_placeholder] = lc
+                    # sess.run(self.lc_enqueue, {self.lc_placeholder: lc})
+                sess.run(fetches, feed_dict=feed_dict)
 
     def start_threads(self, sess, n_threads=1):
         for _ in range(n_threads):

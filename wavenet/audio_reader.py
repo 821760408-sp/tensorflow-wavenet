@@ -37,6 +37,7 @@ def find_files(directory, pattern='*.wav'):
 
 def load_generic_audio(directory, sample_rate):
     """Generator that yields audio waveforms from the directory."""
+
     def randomize_files(fns):
         for _ in fns:
             file_index = random.randint(0, len(fns) - 1)
@@ -59,7 +60,7 @@ def load_generic_audio(directory, sample_rate):
         # normalize audio
         audio = librosa.util.normalize(audio)
         # trim the last 5 seconds to account for music rollout
-        audio = audio[:-5*sample_rate]
+        audio = audio[:-5 * sample_rate]
         audio = np.reshape(audio, (-1, 1))
         yield audio, filename, category_id
 
@@ -81,6 +82,7 @@ def not_all_have_id(files):
 class AudioReader(object):
     """Generic background audio reader that preprocesses audio files
     and enqueues them into a TensorFlow queue."""
+
     def __init__(self,
                  audio_dir,
                  coord,
@@ -135,7 +137,7 @@ class AudioReader(object):
         # Determine the number of mutually-exclusive categories we will
         # accomodate in our embedding table.
         if self.gc_enabled:
-            _, self.gc_category_cardinality = get_category_cardinality(files)
+            _, self.gc_cardinality = get_category_cardinality(files)
             # Add one to the largest index to get the number of categories,
             # since tf.nn.embedding_lookup expects zero-indexing. This
             # means one or more at the bottom correspond to unused entries
@@ -143,11 +145,10 @@ class AudioReader(object):
             # to keep the code simpler, and preserves correspondance between
             # the id one specifies when generating, and the ids in the
             # file names.
-            self.gc_category_cardinality += 1
-            print("Detected --gc_cardinality={}".format(
-                  self.gc_category_cardinality))
+            self.gc_cardinality += 1
+            print("Detected --gc_cardinality={}".format(self.gc_cardinality))
         else:
-            self.gc_category_cardinality = None
+            self.gc_cardinality = None
 
     def dequeue(self, num_elements):
         return self.queue.dequeue_many(num_elements)
@@ -157,7 +158,6 @@ class AudioReader(object):
 
     def dequeue_lc(self, num_elements):
         return self.lc_queue.dequeue_many(num_elements)
-
 
     def thread_main(self, sess):
         stop = False
@@ -181,7 +181,6 @@ class AudioReader(object):
                     audio = np.reshape(audio, (audio.shape[0],))
                     lc = self._midi_notes_encoding(audio)
                     sess.run(self.lc_enqueue, {self.lc_placeholder: lc})
-
 
     def start_threads(self, sess, n_threads=1):
         for _ in range(n_threads):

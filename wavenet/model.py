@@ -507,6 +507,7 @@ class WaveNetModel(object):
                         logits=logits, labels=input_indices, name='nll'),
                     0,
                     name='loss')
+                tf.summary.scalar('train_loss', loss)
 
             return {
                 'predictions': probs,

@@ -220,7 +220,7 @@ def main():
             lc_batch = None
 
     # Create network.
-    output_dict = WaveNetModel(
+    net = WaveNetModel(
         batch_size=args.batch_size,
         dilations=wavenet_params["dilations"],
         filter_width=wavenet_params["filter_width"],
@@ -232,12 +232,14 @@ def main():
         gc_cardinality=reader.gc_cardinality,
         lc_channels=lc_batch.get_shape().as_list()[2]
         if lc_batch is not None else None
-    ).loss(input_batch=audio_batch,
-           gc_batch=gc_id_batch,
-           lc_batch=lc_batch)
+    )
+
+    output_dict = net.loss(input_batch=audio_batch,
+                           gc_batch=gc_id_batch,
+                           lc_batch=lc_batch)
 
     loss = output_dict['loss']
-    tf.summary.scalar('train_loss', loss)
+    # tf.summary.scalar('train_loss', loss)
 
     global_step = tf.get_variable(
         "global_step", [],
@@ -249,7 +251,7 @@ def main():
     for key, value in LEARNING_RATE_SCHEDULE.iteritems():
         lr = tf.cond(
             tf.less(global_step, key), lambda: lr, lambda: tf.constant(value))
-    tf.summary.scalar("learning_rate", lr)
+    # tf.summary.scalar("learning_rate", lr)
 
     optimizer = optimizer_factory[args.optimizer](learning_rate=lr,
                                                   momentum=args.momentum)
@@ -263,16 +265,12 @@ def main():
     summary_op = tf.summary.merge_all()
 
     # Set up session
-    try:
-
-        sess = tf.Session(config=tf.ConfigProto(operation_timeout_in_ms=20000))
-        init = tf.global_variables_initializer()
-        sess.run(init)
-    except tf.errors.DeadlineExceededError:
-        print("Something went wrong with the queue")
+    sess = tf.Session(config=tf.ConfigProto(operation_timeout_in_ms=30000))
+    init = tf.global_variables_initializer()
+    sess.run(init)
 
     # Saver for storing checkpoints of the model.
-    saver = tf.train.Saver(tf.trainable_variables())
+    saver = tf.train.Saver(var_list=tf.trainable_variables())
 
     try:
         saved_global_step = load(saver, sess, restore_from)

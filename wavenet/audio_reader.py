@@ -107,8 +107,7 @@ class AudioReader(object):
         self.gc_enabled = gc_enabled
         self.lc_enabled = lc_enabled
         self.threads = []
-        self.sample_placeholder = tf.placeholder(tf.float32,
-                                                 shape=(self.sample_size, 1))
+        self.sample_placeholder = tf.placeholder(tf.float32, shape=None)
         self.queue = tf.PaddingFIFOQueue(queue_size, ['float32'],
                                          shapes=[(self.sample_size, 1)])
         self.enqueue = self.queue.enqueue([self.sample_placeholder])
@@ -120,8 +119,7 @@ class AudioReader(object):
             self.gc_enqueue = self.gc_queue.enqueue([self.id_placeholder])
 
         if self.lc_enabled:
-            self.lc_placeholder = tf.placeholder(dtype=tf.float32,
-                                                 shape=(None, 88))
+            self.lc_placeholder = tf.placeholder(dtype=tf.float32, shape=None)
             self.lc_queue = tf.PaddingFIFOQueue(queue_size, ['float32'],
                                                 shapes=[(None, 88)])
             self.lc_enqueue = self.lc_queue.enqueue([self.lc_placeholder])

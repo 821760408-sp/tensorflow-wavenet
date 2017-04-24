@@ -189,8 +189,10 @@ class AudioReader(object):
                     lc = self._midi_notes_encoding(crop)
                     fetches.append(self.lc_enqueue)
                     feed_dict[self.lc_placeholder] = lc
-
-                sess.run(fetches, feed_dict=feed_dict)
+                try:
+                    sess.run(fetches, feed_dict=feed_dict)
+                except tf.errors.DeadlineExceededError:
+                    print("DeadlineExceededError detected")
 
     def start_threads(self, sess, n_threads=1):
         for _ in range(n_threads):

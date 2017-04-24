@@ -263,9 +263,9 @@ def main():
                                   name='train')
 
     # Set up logging for TensorBoard.
-    # writer = tf.summary.FileWriter(logdir)
-    # writer.add_graph(tf.get_default_graph())
-    # summary_op = tf.summary.merge_all()
+    writer = tf.summary.FileWriter(logdir)
+    writer.add_graph(tf.get_default_graph())
+    summary_op = tf.summary.merge_all()
 
     # Saver for storing checkpoints of the model.
     saver = tf.train.Saver(var_list=tf.trainable_variables())
@@ -295,12 +295,8 @@ def main():
         for step in range(saved_global_step + 1, args.num_steps):
             start_time = time.time()
 
-            try:
-                loss_value, _ = sess.run([loss, train_op])
-            except tf.errors.DeadlineExceededError:
-                print("DeadlineExceededError detected")
-            # summary, loss_value, _ = sess.run([summary_op, loss, train_op])
-            # writer.add_summary(summary, step)
+            summary, loss_value, _ = sess.run([summary_op, loss, train_op])
+            writer.add_summary(summary, step)
 
             duration = time.time() - start_time
             print('step {:d} - loss = {:.3f}, ({:.3f} sec/step)'

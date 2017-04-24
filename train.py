@@ -88,7 +88,7 @@ def get_arguments():
                              'adam optimizer. Default: ' + str(MOMENTUM) + '.')
     parser.add_argument('--gc_channels', type=int, default=None,
                         help='Number of global condition channels. Default: None. Expecting: Int')
-    parser.add_argument('--lc_channels', type=int, default=88,
+    parser.add_argument('--lc_channels', type=int, default=None,
                         help='Number of local condition channels. Default: 88. Expecting: Int')
     return parser.parse_args()
 

@@ -202,26 +202,26 @@ def main():
 
     # Load raw waveform from corpus.
     # Run the Reader on the CPU
-    # with tf.device('/cpu:0'):
-    with tf.name_scope('create_inputs'):
-        gc_enabled = args.gc_channels is not None
-        lc_enabled = args.lc_channels is not None
-        reader = AudioReader(
-            args.data_dir,
-            coord,
-            sample_rate=wavenet_params['sample_rate'],
-            gc_enabled=gc_enabled,
-            lc_enabled=lc_enabled
-        )
-        audio_batch = reader.dequeue(args.batch_size)
-        if gc_enabled:
-            gc_id_batch = reader.dequeue_gc(args.batch_size)
-        else:
-            gc_id_batch = None
-        if lc_enabled:
-            lc_batch = reader.dequeue_lc(args.batch_size)
-        else:
-            lc_batch = None
+    with tf.device('/cpu:0'):
+        with tf.name_scope('create_inputs'):
+            gc_enabled = args.gc_channels is not None
+            lc_enabled = args.lc_channels is not None
+            reader = AudioReader(
+                args.data_dir,
+                coord,
+                sample_rate=wavenet_params['sample_rate'],
+                gc_enabled=gc_enabled,
+                lc_enabled=lc_enabled
+            )
+            audio_batch = reader.dequeue(args.batch_size)
+            if gc_enabled:
+                gc_id_batch = reader.dequeue_gc(args.batch_size)
+            else:
+                gc_id_batch = None
+            if lc_enabled:
+                lc_batch = reader.dequeue_lc(args.batch_size)
+            else:
+                lc_batch = None
 
     # Create network.
     net = WaveNetModel(

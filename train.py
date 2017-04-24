@@ -288,7 +288,7 @@ def main():
     sess.run(init_op)
 
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
-    reader.start_threads(sess)
+    reader.start_threads(sess, n_threads=3)
 
     step = None
     last_saved_step = saved_global_step

@@ -193,6 +193,9 @@ def main():
         wavenet_params = json.load(f)
 
     # with tf.Graph().as_default():
+    # Set up session
+    sess = tf.Session(config=tf.ConfigProto(operation_timeout_in_ms=30000))
+
     # Create coordinator.
     coord = tf.train.Coordinator()
 
@@ -264,11 +267,6 @@ def main():
     writer.add_graph(tf.get_default_graph())
     summary_op = tf.summary.merge_all()
 
-    # Set up session
-    sess = tf.Session(config=tf.ConfigProto(operation_timeout_in_ms=30000))
-    init = tf.global_variables_initializer()
-    sess.run(init)
-
     # Saver for storing checkpoints of the model.
     saver = tf.train.Saver(var_list=tf.trainable_variables())
 
@@ -287,6 +285,9 @@ def main():
 
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
     reader.start_threads(sess)
+
+    init = tf.global_variables_initializer()
+    sess.run(init)
 
     step = None
     last_saved_step = saved_global_step

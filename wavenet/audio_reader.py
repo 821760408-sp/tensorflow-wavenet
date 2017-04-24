@@ -107,22 +107,24 @@ class AudioReader(object):
         self.gc_enabled = gc_enabled
         self.lc_enabled = lc_enabled
         self.threads = []
-        self.sample_placeholder = tf.placeholder(tf.float32, shape=None)
-        self.queue = tf.PaddingFIFOQueue(queue_size, ['float32'],
-                                         shapes=[(self.sample_size, 1)])
-        self.enqueue = self.queue.enqueue([self.sample_placeholder])
+        # Run the Reader on the CPU
+        with tf.device('/cpu:0'):
+            self.sample_placeholder = tf.placeholder(tf.float32, shape=None)
+            self.queue = tf.PaddingFIFOQueue(queue_size, ['float32'],
+                                             shapes=[(self.sample_size, 1)])
+            self.enqueue = self.queue.enqueue([self.sample_placeholder])
 
-        if self.gc_enabled:
-            self.id_placeholder = tf.placeholder(dtype=tf.int32, shape=())
-            self.gc_queue = tf.PaddingFIFOQueue(queue_size, ['int32'],
-                                                shapes=[()])
-            self.gc_enqueue = self.gc_queue.enqueue([self.id_placeholder])
+            if self.gc_enabled:
+                self.id_placeholder = tf.placeholder(dtype=tf.int32, shape=())
+                self.gc_queue = tf.PaddingFIFOQueue(queue_size, ['int32'],
+                                                    shapes=[()])
+                self.gc_enqueue = self.gc_queue.enqueue([self.id_placeholder])
 
-        if self.lc_enabled:
-            self.lc_placeholder = tf.placeholder(dtype=tf.float32, shape=None)
-            self.lc_queue = tf.PaddingFIFOQueue(queue_size, ['float32'],
-                                                shapes=[(None, 88)])
-            self.lc_enqueue = self.lc_queue.enqueue([self.lc_placeholder])
+            if self.lc_enabled:
+                self.lc_placeholder = tf.placeholder(dtype=tf.float32, shape=None)
+                self.lc_queue = tf.PaddingFIFOQueue(queue_size, ['float32'],
+                                                    shapes=[(None, 88)])
+                self.lc_enqueue = self.lc_queue.enqueue([self.lc_placeholder])
 
         # TODO Find a better way to check this.
         # Checking inside the AudioReader's thread makes it hard to terminate

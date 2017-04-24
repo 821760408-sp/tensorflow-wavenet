@@ -194,8 +194,8 @@ def main():
 
     # with tf.Graph().as_default():
     # Set up session
-    sess = tf.Session(config=tf.ConfigProto(operation_timeout_in_ms=30000,
-                                            inter_op_parallelism_threads=2))
+    sess = tf.Session(config=tf.ConfigProto(operation_timeout_in_ms=20000,
+                                            inter_op_parallelism_threads=4))
 
     # Create coordinator.
     coord = tf.train.Coordinator()
@@ -288,7 +288,7 @@ def main():
     sess.run(init_op)
 
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
-    reader.start_threads(sess, n_threads=3)
+    reader.start_threads(sess, n_threads=1)
 
     step = None
     last_saved_step = saved_global_step

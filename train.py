@@ -194,7 +194,8 @@ def main():
 
     # with tf.Graph().as_default():
     # Set up session
-    sess = tf.Session(config=tf.ConfigProto(operation_timeout_in_ms=30000))
+    sess = tf.Session(config=tf.ConfigProto(operation_timeout_in_ms=30000,
+                                            inter_op_parallelism_threads=2))
 
     # Create coordinator.
     coord = tf.train.Coordinator()

@@ -13,6 +13,7 @@ import json
 import os
 import sys
 import time
+import threading
 
 import tensorflow as tf
 
@@ -89,7 +90,7 @@ def get_arguments():
     parser.add_argument('--gc_channels', type=int, default=None,
                         help='Number of global condition channels. Default: None. Expecting: Int')
     parser.add_argument('--lc_channels', type=int, default=None,
-                        help='Number of local condition channels. Default: 88. Expecting: Int')
+                        help='Number of local condition channels. Default: None. Expecting: Int')
     return parser.parse_args()
 
 
@@ -103,7 +104,7 @@ def save(saver, sess, logdir, step):
         os.makedirs(logdir)
 
     saver.save(sess, checkpoint_path, global_step=step)
-    print(' Done.')
+    print(' Saving checkpoint done.')
 
 
 def load(saver, sess, logdir):
@@ -119,7 +120,7 @@ def load(saver, sess, logdir):
         print("  Global step was: {}".format(global_step))
         print("  Restoring...", end="")
         saver.restore(sess, ckpt.model_checkpoint_path)
-        print(" Done.")
+        print(" Restoring checkpoint done.")
         return global_step
     else:
         print(" No checkpoint found.")
@@ -194,34 +195,46 @@ def main():
 
     # with tf.Graph().as_default():
     # Set up session
-    sess = tf.Session(config=tf.ConfigProto(operation_timeout_in_ms=20000,
-                                            inter_op_parallelism_threads=4))
+    sess = tf.Session(config=tf.ConfigProto(intra_op_parallelism_threads=8,
+                                            # operation_timeout_in_ms=10000,
+                                            # device_count = {'GPU': 0}
+                                            ))
 
     # Create coordinator.
     coord = tf.train.Coordinator()
 
     # Load raw waveform from corpus.
     with tf.name_scope('create_inputs'):
-        gc_enabled = args.gc_channels is not None
-        lc_enabled = args.lc_channels is not None
+        # gc_enabled = args.gc_channels is not None
+        # lc_enabled = args.lc_channels is not None
         reader = AudioReader(
             args.data_dir,
             coord,
             sample_rate=wavenet_params['sample_rate'],
-            gc_enabled=gc_enabled,
-            lc_enabled=lc_enabled
-        )
-        audio_batch = reader.dequeue(args.batch_size)
-        if gc_enabled:
-            gc_id_batch = reader.dequeue_gc(args.batch_size)
-        else:
-            gc_id_batch = None
-        if lc_enabled:
-            lc_batch = reader.dequeue_lc(args.batch_size)
-        else:
-            lc_batch = None
+            # gc_enabled=gc_enabled,
+            # lc_enabled=lc_enabled
+            gc_channels=args.gc_channels,
+            lc_channels=args.lc_channels)
+        # audio_batch = reader.dequeue(args.batch_size)
+        # if gc_enabled:
+        #     gc_id_batch = reader.dequeue_gc(args.batch_size)
+        # else:
+        #     gc_id_batch = None
+        # if lc_enabled:
+        #     lc_batch = reader.dequeue_lc(args.batch_size)
+        # else:
+        #     lc_batch = None
+        inputs_dict = reader.get_batch(args.batch_size)
+
+    # # Start enqueue op
+    # enqueue_thread = threading.Thread(target=reader.enqueue, args=[sess])
+    # enqueue_thread.daemon = True
+    # enqueue_thread.start()
 
     # Create network.
+    audio_batch = inputs_dict['audio_batch']
+    gc_batch = inputs_dict['gc_batch']
+    lc_batch = inputs_dict['lc_batch']
     net = WaveNetModel(
         batch_size=args.batch_size,
         dilations=wavenet_params["dilations"],
@@ -232,16 +245,16 @@ def main():
         quantization_channels=wavenet_params["quantization_channels"],
         gc_channels=args.gc_channels,
         gc_cardinality=reader.gc_cardinality,
-        lc_channels=lc_batch.get_shape().as_list()[2]
-        if lc_batch is not None else None
-    )
+        lc_channels=args.lc_channels)
 
     output_dict = net.loss(input_batch=audio_batch,
-                           gc_batch=gc_id_batch,
-                           lc_batch=lc_batch)
+                           gc_batch=gc_batch \
+                               if args.gc_channels is not None else None,
+                           lc_batch=lc_batch \
+                               if args.lc_channels is not None else None)
 
     loss = output_dict['loss']
-    # tf.summary.scalar('train_loss', loss)
+    tf.summary.scalar('train_loss', loss)
 
     global_step = tf.get_variable(
         "global_step", [],
@@ -253,7 +266,7 @@ def main():
     for key, value in LEARNING_RATE_SCHEDULE.iteritems():
         lr = tf.cond(
             tf.less(global_step, key), lambda: lr, lambda: tf.constant(value))
-    # tf.summary.scalar("learning_rate", lr)
+    tf.summary.scalar("learning_rate", lr)
 
     optimizer = optimizer_factory[args.optimizer](learning_rate=lr,
                                                   momentum=args.momentum)
@@ -275,7 +288,6 @@ def main():
             # The first training step will be saved_global_step + 1,
             # therefore we put -1 here for new or overwritten trainings.
             saved_global_step = -1
-
     except:
         print("Something went wrong while restoring checkpoint. "
               "We will terminate training to avoid accidentally overwriting "
@@ -286,7 +298,11 @@ def main():
     sess.run(init_op)
 
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
-    reader.start_threads(sess, n_threads=1)
+    # reader.start_threads(sess, n_threads=1)
+    # Start enqueue op
+    enqueue_thread = threading.Thread(target=reader.enqueue, args=[sess])
+    enqueue_thread.daemon = True
+    enqueue_thread.start()
 
     step = None
     last_saved_step = saved_global_step

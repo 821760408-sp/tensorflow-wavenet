@@ -2,7 +2,6 @@ import fnmatch
 import os
 import random
 import re
-import threading
 
 import librosa
 import numpy as np
@@ -76,8 +75,6 @@ def not_all_have_id(files):
     return False
 
 
-# TODO: rewrite queue and enqueue with tf.train.
-# TODO: and tf.train.input_producer
 # https://www.tensorflow.org/api_guides/python/io_ops
 class AudioReader(object):
     """Generic background audio reader that preprocesses audio files
@@ -88,43 +85,76 @@ class AudioReader(object):
                  coord,
                  sample_rate,
                  sample_size=10240,
-                 queue_size=32,
-                 gc_enabled=None,
-                 lc_enabled=None):
+                 queue_size=500,
+                 gc_channels=None,
+                 lc_channels=None):
         """
         :param audio_dir: The directory containing WAV files
         :param coord: tf.train.Coordinator 
         :param sample_rate: Sample rate of the audio files
         :param sample_size: Number of timesteps of a cropped sample
         :param queue_size: Size of input pipeline
-        :param gc_enabled: Is global conditioning enabled
-        :param lc_enabled: Is local conditioning enabled
+        :param gc_channels: Global conditioning channels
+        :param lc_channels: Local conditioning channels
         """
         self.audio_dir = audio_dir
         self.sample_rate = sample_rate
         self.coord = coord
         self.sample_size = sample_size
-        self.gc_enabled = gc_enabled
-        self.lc_enabled = lc_enabled
+        self.gc_channels = gc_channels
+        self.lc_channels = lc_channels
+        self.gc_enabled = self.gc_channels or None
+        self.lc_enabled = self.lc_channels or None
         self.threads = []
         # Run the Reader on the CPU
         with tf.device('/cpu:0'):
-            self.sample_placeholder = tf.placeholder(tf.float32, shape=None)
-            self.queue = tf.PaddingFIFOQueue(queue_size, ['float32'],
-                                             shapes=[(self.sample_size, 1)])
-            self.enqueue = self.queue.enqueue([self.sample_placeholder])
+            self.queue_audio = tf.placeholder(dtype=tf.float32,
+                                              shape=[self.sample_size, 1])
+            self.queue_gc = tf.placeholder(dtype=tf.int32,
+                                           shape=[])
+            self.queue_lc = tf.placeholder(
+                dtype=tf.float32,
+                shape=[np.ceil(self.sample_size / 512 + 1).astype(np.int32),
+                       self.lc_channels])
+            # self.queue = tf.PaddingFIFOQueue(
+            #     capacity=queue_size,
+            #     dtypes=[tf.float32, tf.int32, tf.float32],
+            #     shapes=[[self.sample_size, 1],
+            #             [],
+            #             # this is really how librosa calculate length of piptrack
+            #             [np.ceil(self.sample_size/512+1).astype(np.int32),
+            #              self.lc_channels]])
+            self.queue = tf.RandomShuffleQueue(
+                capacity=queue_size,
+                min_after_dequeue=5,
+                dtypes=[tf.float32, tf.int32, tf.float32],
+                shapes=[[self.sample_size, 1],
+                        [],
+                        # this is really how librosa calculate length of piptrack
+                        [np.ceil(self.sample_size / 512 + 1).astype(np.int32),
+                         self.lc_channels]])
+            self.enqueue_op = self.queue.enqueue([self.queue_audio,
+                                                  self.queue_gc,
+                                                  self.queue_lc])
 
-            if self.gc_enabled:
-                self.id_placeholder = tf.placeholder(dtype=tf.int32, shape=())
-                self.gc_queue = tf.PaddingFIFOQueue(queue_size, ['int32'],
-                                                    shapes=[()])
-                self.gc_enqueue = self.gc_queue.enqueue([self.id_placeholder])
+            # self.dequeue_op = self.queue.dequeue()
 
-            if self.lc_enabled:
-                self.lc_placeholder = tf.placeholder(dtype=tf.float32, shape=None)
-                self.lc_queue = tf.PaddingFIFOQueue(queue_size, ['float32'],
-                                                    shapes=[(None, 88)])
-                self.lc_enqueue = self.lc_queue.enqueue([self.lc_placeholder])
+            # self.sample_placeholder = tf.placeholder(tf.float32, shape=None)
+            # self.queue = tf.PaddingFIFOQueue(queue_size, ['float32'],
+            #                                  shapes=[(self.sample_size, 1)])
+            # self.enqueue_op = self.queue.enqueue([self.sample_placeholder])
+
+            # if self.gc_enabled:
+            #     self.id_placeholder = tf.placeholder(dtype=tf.int32, shape=())
+            #     self.gc_queue = tf.PaddingFIFOQueue(queue_size, ['int32'],
+            #                                         shapes=[()])
+            #     self.gc_enqueue = self.gc_queue.enqueue([self.id_placeholder])
+            #
+            # if self.lc_enabled:
+            #     self.lc_placeholder = tf.placeholder(dtype=tf.float32, shape=None)
+            #     self.lc_queue = tf.PaddingFIFOQueue(queue_size, ['float32'],
+            #                                         shapes=[(None, 88)])
+            #     self.lc_enqueue = self.lc_queue.enqueue([self.lc_placeholder])
 
         # TODO Find a better way to check this.
         # Checking inside the AudioReader's thread makes it hard to terminate
@@ -151,58 +181,64 @@ class AudioReader(object):
         else:
             self.gc_cardinality = None
 
-    def dequeue(self, num_elements):
-        return self.queue.dequeue_many(num_elements)
+    def get_batch(self, batch_size):
+        # audio_batch, gc_batch, lc_batch = tf.train.shuffle_batch(
+        #     self.dequeue_op,
+        #     batch_size,
+        #     capacity=10 * batch_size,
+        #     min_after_dequeue=5)
+        audio_batch, gc_batch, lc_batch = self.queue.dequeue_many(batch_size)
+        return {'audio_batch': audio_batch,
+                'gc_batch': gc_batch,
+                'lc_batch': lc_batch}
 
-    def dequeue_gc(self, num_elements):
-        return self.gc_queue.dequeue_many(num_elements)
+    # def dequeue(self, num_elements):
+    #     return self.queue.dequeue_many(num_elements)
 
-    def dequeue_lc(self, num_elements):
-        return self.lc_queue.dequeue_many(num_elements)
+    # def dequeue_gc(self, num_elements):
+    #     return self.gc_queue.dequeue_many(num_elements)
+    #
+    # def dequeue_lc(self, num_elements):
+    #     return self.lc_queue.dequeue_many(num_elements)
 
-    def thread_main(self, sess):
+    def enqueue(self, sess):
         stop = False
         # Go through the dataset multiple times
         while not stop:
             iterator = load_generic_audio(self.audio_dir, self.sample_rate)
             for audio, filename, category_id in iterator:
-                if self.coord.should_stop():
-                    stop = True
-                    break
-
-                fetches = list()
-                feed_dict = dict()
+                # if self.coord.should_stop():
+                #     stop = True
+                #     break
 
                 offset = np.random.randint(0, audio.shape[0] - self.sample_size)
                 crop = audio[offset:offset + self.sample_size, :]
                 assert crop.shape[0] == self.sample_size
                 assert crop.shape[1] == audio.shape[1]
 
-                fetches.append(self.enqueue)
-                feed_dict[self.sample_placeholder] = crop
-
-                if self.gc_enabled:
-                    fetches.append(self.gc_enqueue)
-                    feed_dict[self.id_placeholder] = category_id
+                if not self.gc_enabled:
+                    category_id = None
 
                 if self.lc_enabled:
                     # reshape piece into 1-D audio signal
-                    crop = np.reshape(crop, (crop.shape[0],))
+                    crop = np.reshape(crop, (-1,))
                     lc = self._midi_notes_encoding(crop)
-                    fetches.append(self.lc_enqueue)
-                    feed_dict[self.lc_placeholder] = lc
-                try:
-                    sess.run(fetches, feed_dict=feed_dict)
-                except tf.errors.DeadlineExceededError:
-                    print("DeadlineExceededError detected")
+                    crop = np.reshape(crop, (-1, 1))
+                else:
+                    lc = np.empty([1, self.lc_channels], dtype=np.float32)
 
-    def start_threads(self, sess, n_threads=1):
-        for _ in range(n_threads):
-            thread = threading.Thread(target=self.thread_main, args=(sess,))
-            thread.daemon = True  # Thread will close when parent quits.
-            thread.start()
-            self.threads.append(thread)
-        return self.threads
+                sess.run(self.enqueue_op, feed_dict={self.queue_audio: crop,
+                                                     self.queue_gc: category_id,
+                                                     self.queue_lc: lc})
+                # print("----------------> ADDED TO QUEUE")
+
+    # def start_threads(self, sess, n_threads=1):
+    #     for _ in range(n_threads):
+    #         thread = threading.Thread(target=self.thread_main, args=(sess,))
+    #         thread.daemon = True  # Thread will close when parent quits.
+    #         thread.start()
+    #         self.threads.append(thread)
+    #     return self.threads
 
     @staticmethod
     def _midi_notes_encoding(audio):

@@ -35,13 +35,13 @@ LEARNING_RATE_SCHEDULE = {
     0: 1e-3,
     10000: 6e-4,
     30000: 4e-4,
-    60000: 4e-4 * 2 / 3,
-    90000: 4e-4 / 3,
-    120000: 6e-5,
-    150000: 4e-5,
-    180000: 2e-5,
+    60000: 1e-4,
+    90000: 8e-5,
+    120000: 5e-5,
+    150000: 2e-5,
+    180000: 9e-6,
     210000: 6e-6,
-    240000: 2e-6,
+    240000: 3e-6,
 }
 WAVENET_PARAMS = './wavenet_params.json'
 STARTED_DATESTRING = "{0:%Y-%m-%dT%H-%M-%S}".format(datetime.now())

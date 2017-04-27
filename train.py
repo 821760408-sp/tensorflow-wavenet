@@ -22,7 +22,7 @@ from wavenet import WaveNetModel, AudioReader, optimizer_factory
 BATCH_SIZE = 1
 DATA_DIRECTORY = '/scratch/yg1349/solo-piano-classical-corpus'
 LOGDIR_ROOT = './logdir'
-CHECKPOINT_EVERY = 50
+CHECKPOINT_EVERY = 250
 NUM_STEPS = int(2e5)
 LEARNING_RATE_SCHEDULE = {
     # 0: 2e-4,
@@ -195,7 +195,9 @@ def main():
 
     # with tf.Graph().as_default():
     # Set up session
-    sess = tf.Session(config=tf.ConfigProto(intra_op_parallelism_threads=8,
+    sess = tf.Session(config=tf.ConfigProto(
+                                            # log_device_placement=False,
+                                            # intra_op_parallelism_threads=0,
                                             # operation_timeout_in_ms=10000,
                                             # device_count = {'GPU': 0}
                                             ))

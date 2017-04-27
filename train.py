@@ -72,8 +72,8 @@ def get_arguments():
                              'in --logdir_root. '
                              'Cannot use with --logdir.')
     parser.add_argument('--checkpoint_every', type=int, default=CHECKPOINT_EVERY,
-                        help='How many steps to save each checkpoint after. Default: '
-                             + str(CHECKPOINT_EVERY) + '.')
+                        help='How many steps to save each checkpoint after. '
+                             'Default: ' + str(CHECKPOINT_EVERY) + '.')
     parser.add_argument('--num_steps', type=int, default=NUM_STEPS,
                         help='Number of training steps. Default: '
                              + str(NUM_STEPS) + '.')
@@ -82,15 +82,18 @@ def get_arguments():
                              + WAVENET_PARAMS + '.')
     parser.add_argument('--optimizer', type=str, default='adam',
                         choices=optimizer_factory.keys(),
-                        help='Select the optimizer specified by this option. Default: adam.')
+                        help='Select the optimizer specified by this option. '
+                             'Default: adam.')
     parser.add_argument('--momentum', type=float, default=MOMENTUM,
                         help='Specify the momentum to be '
                              'used by sgd or rmsprop optimizer. Ignored by the '
                              'adam optimizer. Default: ' + str(MOMENTUM) + '.')
     parser.add_argument('--gc_channels', type=int, default=None,
-                        help='Number of global condition channels. Default: None. Expecting: Int')
+                        help='Number of global condition channels. '
+                             'Default: None. Expecting: Int')
     parser.add_argument('--lc_channels', type=int, default=None,
-                        help='Number of local condition channels. Default: None. Expecting: Int')
+                        help='Number of local condition channels. '
+                             'Default: None. Expecting: Int')
     return parser.parse_args()
 
 
@@ -195,12 +198,7 @@ def main():
 
     # with tf.Graph().as_default():
     # Set up session
-    sess = tf.Session(config=tf.ConfigProto(
-                                            # log_device_placement=False,
-                                            # intra_op_parallelism_threads=0,
-                                            # operation_timeout_in_ms=10000,
-                                            # device_count = {'GPU': 0}
-                                            ))
+    sess = tf.Session()
 
     # Create coordinator.
     coord = tf.train.Coordinator()
@@ -217,21 +215,7 @@ def main():
             # lc_enabled=lc_enabled
             gc_channels=args.gc_channels,
             lc_channels=args.lc_channels)
-        # audio_batch = reader.dequeue(args.batch_size)
-        # if gc_enabled:
-        #     gc_id_batch = reader.dequeue_gc(args.batch_size)
-        # else:
-        #     gc_id_batch = None
-        # if lc_enabled:
-        #     lc_batch = reader.dequeue_lc(args.batch_size)
-        # else:
-        #     lc_batch = None
         inputs_dict = reader.get_batch(args.batch_size)
-
-    # # Start enqueue op
-    # enqueue_thread = threading.Thread(target=reader.enqueue, args=[sess])
-    # enqueue_thread.daemon = True
-    # enqueue_thread.start()
 
     # Create network.
     audio_batch = inputs_dict['audio_batch']
@@ -300,7 +284,6 @@ def main():
     sess.run(init_op)
 
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
-    # reader.start_threads(sess, n_threads=1)
     # Start enqueue op
     enqueue_thread = threading.Thread(target=reader.enqueue, args=[sess])
     enqueue_thread.daemon = True

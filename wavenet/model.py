@@ -87,19 +87,20 @@ class WaveNetModel(object):
     @staticmethod
     def calculate_receptive_field(filter_width, dilations):
         receptive_field = (filter_width - 1) * sum(dilations) + 1
-        # receptive_field += filter_width - 1
+        # TODO: why add another (filter_width - 1)?
+        receptive_field += filter_width - 1
         return receptive_field
 
     @staticmethod
     def _enc_upsampling_conv(encoding,
-                             audio_length,  # audio size on time dimension
-                             filter_length=1024,  # filter size on time dimension
-                             time_stride=512):  # upsampling factor on time dimension
+                             audio_length,
+                             filter_length=1024,
+                             time_stride=512):
         """Upsample local conditioning encoding to match time dim. of audio  
         :param encoding: [mb, timeframe, channels] Local conditionining encoding
         :param audio_length: Length of time dimension of audio 
         :param filter_length: transpose conv. filter length
-        :param time_stride: stride along time dimension
+        :param time_stride: stride along time dimension (upsamp. factor)
         :return: upsampled local conditioning encoding
         """
         with tf.variable_scope('upsampling_conv'):
@@ -107,7 +108,8 @@ class WaveNetModel(object):
             shape = tf.shape(encoding)
             strides = [1, 1, time_stride, 1]
             output_length = (shape[1] - 1) * time_stride + filter_length
-            output_shape = tf.stack([batch_size, 1, output_length, enc_channels])
+            output_shape = tf.stack(
+                [batch_size, 1, output_length, enc_channels])
 
             kernel_shape = [1, filter_length, enc_channels, enc_channels]
             biases_shape = [enc_channels]
@@ -121,13 +123,15 @@ class WaveNetModel(object):
                 biases_shape,
                 initializer=tf.constant_initializer(0.0))
 
-            encoding = tf.reshape(encoding, [batch_size, 1, shape[1], enc_channels])
+            encoding = tf.reshape(encoding,
+                                  [batch_size, 1, shape[1], enc_channels])
             upsamp_conv = tf.nn.conv2d_transpose(
                 encoding,
                 upsamp_weights, output_shape, strides, padding='VALID')
             output = tf.nn.bias_add(upsamp_conv, upsamp_biases)
 
-            output = tf.reshape(output, [batch_size, output_length, enc_channels])
+            output = tf.reshape(output,
+                                [batch_size, output_length, enc_channels])
             output_sliced = tf.slice(
                 output, [0, 0, 0],
                 tf.stack([-1, audio_length, -1]))
@@ -143,7 +147,8 @@ class WaveNetModel(object):
           :param input_batch: [mb, length, channels] float tensor input
           :param encoding: [mb, encoding_length, channels] float tensor encoding
           :param conditioning: 'global' or 'local'
-          :return: output after broadcasting the encoding to x's shape and adding them. 
+          :return: output after broadcasting the encoding to 
+                   x's shape and adding them. 
         """
         mb, length, channels = input_batch.get_shape().as_list()
         enc_mb, enc_length, enc_channels = encoding.get_shape().as_list()
@@ -154,7 +159,8 @@ class WaveNetModel(object):
 
         if conditioning == 'global':
             encoding = tf.reshape(encoding, [mb, enc_length, 1, channels])
-            input_batch = tf.reshape(input_batch, [mb, enc_length, -1, channels])
+            input_batch = tf.reshape(input_batch,
+                                     [mb, enc_length, -1, channels])
             input_batch += encoding
             input_batch = tf.reshape(input_batch, [mb, length, channels])
             input_batch.set_shape([mb, length, channels])
@@ -208,16 +214,14 @@ class WaveNetModel(object):
                 var['start_conv'] = self._create_conv_layer(
                     self.filter_width,
                     self.input_channels,
-                    self.residual_channels
-                )
+                    self.residual_channels)
 
             # Create first skip connections
             with tf.variable_scope('skip_start'):
                 var['skip_start'] = self._create_conv_layer(
                     1,
                     self.input_channels,
-                    self.skip_channels
-                )
+                    self.skip_channels)
 
             var['dilated_stack'] = list()
             with tf.variable_scope('dilated_stack'):
@@ -229,23 +233,20 @@ class WaveNetModel(object):
                             current['dilated_conv'] = self._create_conv_layer(
                                 self.filter_width,
                                 self.residual_channels,
-                                2 * self.residual_channels
-                            )
+                                2 * self.residual_channels)
 
                         with tf.variable_scope('residual_conv{}'.format(i + 1)):
                             # 1x1 residual conv
                             current['residual_conv'] = self._create_conv_layer(
                                 1,
                                 self.residual_channels,
-                                self.residual_channels
-                            )
+                                self.residual_channels)
 
                         with tf.variable_scope('skip_conn{}'.format(i + 1)):
                             current['skip_conn'] = self._create_conv_layer(
                                 1,
                                 self.residual_channels,
-                                self.skip_channels
-                            )
+                                self.skip_channels)
 
                         if self.gc_channels is not None:
                             with tf.variable_scope('gc_conv{}'.format(i + 1)):
@@ -253,8 +254,7 @@ class WaveNetModel(object):
                                 current['gc_conv'] = self._create_conv_layer(
                                     1,
                                     self.gc_channels,
-                                    2 * self.residual_channels
-                                )
+                                    2 * self.residual_channels)
 
                         if self.lc_channels is not None:
                             with tf.variable_scope('lc_conv{}'.format(i + 1)):
@@ -262,8 +262,7 @@ class WaveNetModel(object):
                                 current['lc_conv'] = self._create_conv_layer(
                                     1,
                                     self.lc_channels,
-                                    2 * self.residual_channels
-                                )
+                                    2 * self.residual_channels)
 
                         var['dilated_stack'].append(current)
 
@@ -272,32 +271,28 @@ class WaveNetModel(object):
                 var['postprocessing'] = self._create_conv_layer(
                     1,
                     self.skip_channels,
-                    self.skip_channels
-                )
+                    self.skip_channels)
 
             if self.gc_channels is not None:
                 with tf.variable_scope('gc_conv_out'):
                     var['gc_conv_out'] = self._create_conv_layer(
                         1,
                         self.gc_channels,
-                        self.skip_channels
-                    )
+                        self.skip_channels)
 
             if self.lc_channels is not None:
                 with tf.variable_scope('lc_conv_out'):
                     var['lc_conv_out'] = self._create_conv_layer(
                         1,
                         self.lc_channels,
-                        self.skip_channels
-                    )
+                        self.skip_channels)
 
             with tf.variable_scope('logit'):
                 # Create weights and biases for computing logits
                 var['logit'] = self._create_conv_layer(
                     1,
                     self.skip_channels,
-                    self.quantization_channels
-                )
+                    self.quantization_channels)
 
         return var
 
@@ -329,12 +324,12 @@ class WaveNetModel(object):
              skip_connection: The collection of skip connections so far.
              layer_index: Integer indicating which layer this is.
              dilation: Integer specifying the dilation size.
-             global_condition_batch: Tensor containing the global data upon
+             gc_batch: Tensor containing the global data upon
                  which the output is to be conditioned upon. Shape:
                  [batch size, 1, channels]. The 1 is for the axis
                  corresponding to time so that the result is broadcast to
                  all time steps.
-             local_condition_batch:
+             lc_batch:
 
         The layer contains a gated filter that connects to dense output
         and to a skip connection:
@@ -362,7 +357,8 @@ class WaveNetModel(object):
             lc_biases = variables['lc_conv']['biases']
 
             dilation_out = self._condition(dilation_out,
-                                           conv1d(lc_batch, lc_weights, lc_biases),
+                                           conv1d(lc_batch, lc_weights,
+                                                  lc_biases),
                                            conditioning='local')
 
         if gc_batch is not None:
@@ -370,7 +366,8 @@ class WaveNetModel(object):
             gc_biases = variables['gc_conv']['biases']
 
             dilation_out = self._condition(dilation_out,
-                                           conv1d(gc_batch, gc_weights, gc_biases),
+                                           conv1d(gc_batch, gc_weights,
+                                                  gc_biases),
                                            conditioning='global')
 
         assert dilation_out.get_shape().as_list()[2] % 2 == 0
@@ -399,7 +396,7 @@ class WaveNetModel(object):
         """
         embedding = None
 
-        if self.gc_cardinality is None:
+        if self.gc_cardinality is not None:
             # Only lookup the embedding if the global condition is presented
             # as an integer of mutually-exclusive categories ...
             embedding_table = self.variables['embeddings']['gc_embedding']
@@ -441,8 +438,7 @@ class WaveNetModel(object):
                         layer_index,
                         dilation,
                         gc_batch,
-                        lc_batch
-                    )
+                        lc_batch)
 
         # Perform (+) -> ReLU -> 1x1 conv -> ReLU -> 1x1 conv to
         # postprocess the output.
@@ -486,20 +482,22 @@ class WaveNetModel(object):
              lc_batch=None,
              name='wavenet'):
         """Creates a WaveNet network and returns the autoencoding loss.
-        :param input_batch: The [nb, time] audio input tensor 
+        :param input_batch: The [nb, time, 1] audio input tensor 
         :param gc_batch: 
         :param lc_batch: 
         :param name:
         :return: Prediction, loss, and quantized input
         """
         with tf.name_scope(name):
-            input_quantized = mu_law_encode(input_batch, self.quantization_channels)
+            input_quantized = mu_law_encode(input_batch,
+                                            self.quantization_channels)
             input_scaled = tf.cast(input_quantized, tf.float32) / 128.0
             assert len(input_scaled.get_shape()) == 3
 
             logits = self._create_network(input_scaled, gc_batch, lc_batch)
             probs = tf.nn.softmax(logits, name='softmax')
-            input_indices = tf.cast(tf.reshape(input_quantized, [-1]), tf.int32) + 128
+            input_indices = tf.cast(tf.reshape(input_quantized, [-1]),
+                                    tf.int32) + 128
 
             with tf.name_scope('loss'):
                 loss = tf.reduce_mean(
@@ -519,110 +517,160 @@ class WaveNetModel(object):
             }
 
     @staticmethod
-    def _generator_conv(input_batch, state_batch, weights):
+    def _generator_conv(input_batch, state_batch, weights, biases):
         """Perform convolution for a single convolutional processing step."""
         # TODO generalize to filter_width > 2
-        past_weights = weights[0, :, :]
+        past_weights = weights[0, :, :]  # now a rank 2 tensor
         curr_weights = weights[1, :, :]
-        output = tf.matmul(state_batch, past_weights) + tf.matmul(
-            input_batch, curr_weights)
+        output = tf.matmul(state_batch, past_weights) + \
+                 tf.matmul(input_batch, curr_weights)
+        output = tf.nn.bias_add(output, biases)
         return output
 
-    def _generator_causal_layer(self, input_batch, state_batch):
-        with tf.name_scope('causal_layer'):
-            weights_filter = self.variables['causal_layer']['filter']
-            output = self._generator_conv(
-                input_batch, state_batch, weights_filter)
-        return output
+    def _generator_start_layer(self, input_batch, state_batch):
+        with tf.name_scope('start_conv'):
+            weights = self.variables['start_conv']['weights']
+            biases = self.variables['start_conv']['biases']
+        return self._generator_conv(input_batch, state_batch,
+                                    weights, biases)
 
     def _generator_dilation_layer(self,
                                   input_batch,
                                   state_batch,
                                   layer_index,
                                   dilation,
-                                  global_condition_batch,
-                                  local_condition_batch):
+                                  gc_batch,
+                                  lc_batch):
         variables = self.variables['dilated_stack'][layer_index]
 
-        weights_filter = variables['filter']
-        weights_gate = variables['gate']
-        output_filter = self._generator_conv(
-            input_batch, state_batch, weights_filter)
-        output_gate = self._generator_conv(
-            input_batch, state_batch, weights_gate)
+        weights = variables['dilated_conv']['weights']
+        biases = variables['dilated_conv']['biases']
+        dilation_out = self._generator_conv(input_batch, state_batch,
+                                            weights, biases)
 
-        if global_condition_batch is not None:
-            global_condition_batch = tf.reshape(global_condition_batch,
-                                                shape=(1, -1))
-            weights_gc_filter = variables['gc_filtweights']
-            weights_gc_filter = weights_gc_filter[0, :, :]
-            output_filter += tf.matmul(global_condition_batch,
-                                       weights_gc_filter)
-            weights_gc_gate = variables['gc_gateweights']
-            weights_gc_gate = weights_gc_gate[0, :, :]
-            output_gate += tf.matmul(global_condition_batch,
-                                     weights_gc_gate)
+        # weights_filter = variables['filter']
+        # weights_gate = variables['gate']
+        # output_filter = self._generator_conv(
+        #     input_batch, state_batch, weights_filter)
+        # output_gate = self._generator_conv(
+        #     input_batch, state_batch, weights_gate)
 
-        # TODO: verification
-        if local_condition_batch is not None:
-            local_condition_batch = tf.reshape(local_condition_batch, shape=(1, -1))
-            weights_lc_filter = variables['lc_filtweights']
-            weights_lc_filter = weights_lc_filter[0, :, :]
-            weights_lc_gate = variables['lc_gateweights']
-            weights_lc_gate = weights_lc_gate[0, :, :]
-            output_filter += causal_conv(local_condition_batch, weights_lc_filter, dilation)
-            output_gate += causal_conv(local_condition_batch, weights_lc_gate, dilation)
+        if lc_batch is not None:
+            # shape=1, self.lc_channels, 2*self.residual_channels
+            lc_weights = variables['lc_conv']['weights']
+            lc_biases = variables['lc_conv']['biases']
+            lc_weights = lc_weights[0, :, :]
+            lc_biases = lc_biases[0, :, :]
+            # TODO: shape lc_batch (should be [1, 88], where `1` is time?)
+            # lc_batch = tf.reshape(lc_batch, shape=(1, -1))
+            # weights_lc_filter = variables['lc_filtweights']
+            # weights_lc_filter = weights_lc_filter[0, :, :]
+            # weights_lc_gate = variables['lc_gateweights']
+            # weights_lc_gate = weights_lc_gate[0, :, :]
+            # output_filter += causal_conv(lc_batch, weights_lc_filter, dilation)
+            # output_gate += causal_conv(lc_batch, weights_lc_gate, dilation)
+            dilation_out += tf.matmul(lc_batch, lc_weights)
+            dilation_out = tf.nn.bias_add(dilation_out, lc_biases)
 
-        if self.use_biases:
-            output_filter = output_filter + variables['filter_bias']
-            output_gate = output_gate + variables['gate_bias']
+        if gc_batch is not None:
+            gc_weights = variables['gc_conv']['weights']
+            gc_biases = variables['gc_conv']['biases']
+            gc_weights = gc_weights[0, :, :]
+            gc_biases = gc_biases[0, :, :]
 
-        out = tf.tanh(output_filter) * tf.sigmoid(output_gate)
+            dilation_out += tf.matmul(gc_batch, gc_weights)
+            dilation_out = tf.nn.bias_add(dilation_out, gc_biases)
 
-        weights_dense = variables['dense']
-        transformed = tf.matmul(out, weights_dense[0, :, :])
-        if self.use_biases:
-            transformed = transformed + variables['dense_bias']
+            # weights_gc_filter = variables['gc_filtweights']
+            # weights_gc_filter = weights_gc_filter[0, :, :]
+            # output_filter += tf.matmul(gc_batch,
+            #                            weights_gc_filter)
+            # weights_gc_gate = variables['gc_gateweights']
+            # weights_gc_gate = weights_gc_gate[0, :, :]
+            # output_gate += tf.matmul(gc_batch,
+            #                          weights_gc_gate)
 
-        weights_skip = variables['skip']
-        skip_contribution = tf.matmul(out, weights_skip[0, :, :])
-        if self.use_biases:
-            skip_contribution = skip_contribution + variables['skip_bias']
+        # if self.use_biases:
+        #     output_filter = output_filter + variables['filter_bias']
+        #     output_gate = output_gate + variables['gate_bias']
 
-        return skip_contribution, input_batch + transformed
+        assert dilation_out.get_shape().as_list()[1] % 2 == 0
+        m = dilation_out.get_shape().as_list()[1] // 2
+        do_sigmoid = tf.sigmoid(dilation_out[:, :m])  # sigmoid is for gate
+        do_tanh = tf.tanh(dilation_out[:, m:])  # tanh is for filter
+        dilation_out = do_sigmoid * do_tanh
+        # out = tf.tanh(output_filter) * tf.sigmoid(output_gate)
 
-    def _create_generator(self, input_batch, global_condition_batch, local_condition_batch):
+        # The 1x1 conv to produce the residual output
+        res_weights = variables['residual_conv']['weights']
+        res_biases = variables['residual_conv']['biases']
+        res_weights = res_weights[0, :, :]
+        res_biases = res_biases[0, :, :]
+
+        input_batch += tf.matmul(dilation_out, res_weights)
+        input_batch = tf.nn.bias_add(input_batch, res_biases)
+
+        # The 1x1 conv to produce the skip output
+        skip_weights = variables['skip_conn']['weights']
+        skip_biases = variables['skip_conn']['biases']
+        skip_weights = skip_weights[0, :, :]
+        skip_biases = skip_biases[0, :, :]
+        skip_connection = tf.matmul(dilation_out, skip_weights)
+        skip_connection = tf.nn.bias_add(skip_connection, skip_biases)
+
+        # weights_dense = variables['dense']
+        # transformed = tf.matmul(out, weights_dense[0, :, :])
+        # if self.use_biases:
+        #     transformed = transformed + variables['dense_bias']
+        #
+        # weights_skip = variables['skip']
+        # skip_contribution = tf.matmul(out, weights_skip[0, :, :])
+        # if self.use_biases:
+        #     skip_contribution = skip_contribution + variables['skip_bias']
+
+        return skip_connection, input_batch
+
+    def _create_generator(self, audio_batch, gc_batch, lc_batch):
         """Construct an efficient incremental generator."""
         init_ops = []
         push_ops = []
-        outputs = []
-        current_layer = input_batch
+        skip_connection = []
+        current_layer = audio_batch
+
+        if gc_batch is not None:
+            gc_batch = self._embed_gc(gc_batch)
+            gc_batch = tf.reshape(gc_batch, shape=(-1, self.gc_channels))
+
+        if lc_batch is not None:
+            lc_batch = tf.reshape(lc_batch, shape=(-1, self.lc_channels))
 
         q = tf.FIFOQueue(
-            1,
-            dtypes=tf.float32,
-            shapes=(self.batch_size, self.quantization_channels))
+            capacity=1,
+            dtypes=[tf.float32],
+            shapes=[(self.batch_size, self.input_channels)],
+            names=['sample_queue'])
         init = q.enqueue_many(
-            tf.zeros((1, self.batch_size, self.quantization_channels)))
+            tf.zeros((1, self.batch_size, self.input_channels)))
 
         current_state = q.dequeue()
         push = q.enqueue([current_layer])
         init_ops.append(init)
         push_ops.append(push)
 
-        current_layer = self._generator_causal_layer(
+        current_layer = self._generator_start_layer(
             current_layer, current_state)
 
         # Add all defined dilation layers.
         with tf.name_scope('dilated_stack'):
             for layer_index, dilation in enumerate(self.dilations):
-                with tf.name_scope('layer{}'.format(layer_index)):
+                with tf.name_scope('layer{}'.format(layer_index + 1)):
                     q = tf.FIFOQueue(
                         dilation,
-                        dtypes=tf.float32,
-                        shapes=(self.batch_size, self.residual_channels))
+                        dtypes=[tf.float32],
+                        shapes=[(self.batch_size, self.residual_channels)])
                     init = q.enqueue_many(
-                        tf.zeros((dilation, self.batch_size,
+                        tf.zeros((dilation,
+                                  self.batch_size,
                                   self.residual_channels)))
 
                     current_state = q.dequeue()
@@ -630,85 +678,96 @@ class WaveNetModel(object):
                     init_ops.append(init)
                     push_ops.append(push)
 
-                    output, current_layer = self._generator_dilation_layer(
-                        current_layer, current_state, layer_index, dilation,
-                        global_condition_batch, local_condition_batch)
-                    outputs.append(output)
+                    skip_conn, current_layer = self._generator_dilation_layer(
+                        current_layer, current_state,
+                        layer_index, dilation,
+                        gc_batch, lc_batch)
+                    skip_connection.append(skip_conn)
+
         self.init_ops = init_ops
         self.push_ops = push_ops
 
         with tf.name_scope('postprocessing'):
-            variables = self.variables['postprocessing']
-            # Perform (+) -> ReLU -> 1x1 conv -> ReLU -> 1x1 conv to
-            # postprocess the output.
-            w1 = variables['postprocess1']
-            w2 = variables['postprocess2']
-            if self.use_biases:
-                b1 = variables['postprocess1_bias']
-                b2 = variables['postprocess2_bias']
+            skip_connection = tf.add_n(skip_connection)
+            skip_connection = tf.nn.relu(skip_connection)
+            pp_weights = self.variables['postprocessing']['weights']
+            pp_weights = pp_weights[0, :, :]
+            pp_biases = self.variables['postprocessing']['biases']
+            pp_biases = pp_biases[0, :, :]
+            skip_connection = tf.matmul(skip_connection, pp_weights)
+            skip_connection = tf.nn.bias_add(skip_connection, pp_biases)
 
-            # We skip connections from the outputs of each layer, adding them
-            # all up here.
-            total = sum(outputs)
-            transformed1 = tf.nn.relu(total)
+            # variables = self.variables['postprocessing']
+            # # Perform (+) -> ReLU -> 1x1 conv -> ReLU -> 1x1 conv to
+            # # postprocess the output.
+            # w1 = variables['postprocess1']
+            # w2 = variables['postprocess2']
+            # if self.use_biases:
+            #     b1 = variables['postprocess1_bias']
+            #     b2 = variables['postprocess2_bias']
 
-            conv1 = tf.matmul(transformed1, w1[0, :, :])
-            if self.use_biases:
-                conv1 = conv1 + b1
-            transformed2 = tf.nn.relu(conv1)
-            conv2 = tf.matmul(transformed2, w2[0, :, :])
-            if self.use_biases:
-                conv2 = conv2 + b2
+            # # We skip connections from the outputs of each layer, adding them
+            # # all up here.
+            # total = sum(outputs)
+            # transformed1 = tf.nn.relu(total)
 
-        return conv2
+            if lc_batch is not None:
+                lc_weights = self.variables['lc_conv_out']['weights']
+                lc_biases = self.variables['lc_conv_out']['biases']
+                lc_weights = lc_weights[0, :, :]
+                lc_biases = lc_biases[0, :, :]
+                skip_connection += tf.matmul(lc_batch, lc_weights)
+                skip_connection = tf.nn.bias_add(skip_connection, lc_biases)
 
-    def _one_hot(self, input_batch):
-        """One-hot encodes the waveform amplitudes.
+            if gc_batch is not None:
+                gc_weights = self.variables['gc_conv_out']['weights']
+                gc_biases = self.variables['gc_conv_out']['biases']
+                gc_weights = gc_weights[0, :, :]
+                gc_biases = gc_biases[0, :, :]
+                skip_connection += tf.matmul(gc_batch, gc_weights)
+                skip_connection = tf.nn.bias_add(skip_connection, gc_biases)
 
-        This allows the definition of the network as a categorical distribution
-        over a finite set of possible amplitudes.
-        """
-        with tf.name_scope('one_hot_encode'):
-            encoded = tf.one_hot(
-                input_batch,
-                depth=self.quantization_channels,
-                dtype=tf.float32)
-            shape = [self.batch_size, -1, self.quantization_channels]
-            encoded = tf.reshape(encoded, shape)
-        return encoded
+        with tf.name_scope('logit'):
+            skip_connection = tf.nn.relu(skip_connection)
 
-    def predict_proba(self, waveform, global_condition=None, local_condition=None, name='wavenet'):
-        """Computes the probability distribution of the next sample based on
-        all samples in the input waveform.
-        If you want to generate audio by feeding the output of the network back
-        as an input, see predict_proba_incremental for a faster alternative."""
-        with tf.name_scope(name):
-            encoded = self._one_hot(waveform)
+            logit_weights = self.variables['logit']['weights']
+            logit_biases = self.variables['logit']['biases']
+            logit_weights = logit_weights[0, :, :]
+            logit_biases = logit_biases[0, :, :]
+            logits = tf.matmul(skip_connection, logit_weights)
+            logits = tf.nn.bias_add(logits, logit_biases)
 
-            gc_embedding = self._embed_gc(global_condition)
-            raw_output = self._create_network(encoded, gc_embedding, local_condition)
-            out = tf.reshape(raw_output, [-1, self.quantization_channels])
-            # Cast to float64 to avoid bug in TensorFlow
-            proba = tf.cast(
-                tf.nn.softmax(tf.cast(out, tf.float64)), tf.float32)
-            last = tf.slice(
-                proba,
-                [tf.shape(proba)[0] - 1, 0],
-                [1, self.quantization_channels])
-            return tf.reshape(last, [-1])
+            # logits = tf.reshape(logits, [-1, 256])
+            #
+            # conv1 = tf.matmul(transformed1, w1[0, :, :])
+            # if self.use_biases:
+            #     conv1 = conv1 + b1
+            # transformed2 = tf.nn.relu(conv1)
+            # conv2 = tf.matmul(transformed2, w2[0, :, :])
+            # if self.use_biases:
+            #     conv2 = conv2 + b2
 
-    def predict_proba_incremental(self, waveform, global_condition=None, local_condition=None,
-                                  name='wavenet'):
+        return logits
+
+    def predict_proba_incremental(self,
+                                  waveform,
+                                  global_condition=None,
+                                  local_condition=None,
+                                  name='wavenet_predict'):
         """Computes the probability distribution of the next sample incrementally,
         based on a single sample and all previously passed samples."""
         if self.filter_width > 2:
             raise NotImplementedError("Incremental generation does not "
                                       "support filter_width > 2.")
         with tf.name_scope(name):
-            encoded = tf.one_hot(waveform, self.quantization_channels)
-            encoded = tf.reshape(encoded, [-1, self.quantization_channels])
-            gc_embedding = self._embed_gc(global_condition)
-            raw_output = self._create_generator(encoded, gc_embedding, local_condition)
+            # encoded = tf.one_hot(waveform, self.quantization_channels)
+            # encoded = tf.reshape(encoded, [-1, self.quantization_channels])
+            waveform = tf.reshape(waveform, [-1, self.input_channels])
+            waveform.set_shape([-1, self.input_channels])
+
+            raw_output = self._create_generator(waveform,
+                                                global_condition,
+                                                local_condition)
             out = tf.reshape(raw_output, [-1, self.quantization_channels])
             proba = tf.cast(
                 tf.nn.softmax(tf.cast(out, tf.float64)), tf.float32)

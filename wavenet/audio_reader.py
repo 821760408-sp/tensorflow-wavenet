@@ -56,9 +56,9 @@ def load_generic_audio(directory, sample_rate):
             # The file name matches the pattern for containing ids.
             category_id = int(ids[0][0])
         audio, _ = librosa.load(filename, sr=sample_rate, mono=True)
-        # normalize audio
+        # Normalize audio
         audio = librosa.util.normalize(audio)
-        # trim the last 5 seconds to account for music rollout
+        # Trim the last 5 seconds to account for music rollout
         audio = audio[:-5 * sample_rate]
         audio = np.reshape(audio, (-1, 1))
         yield audio, filename, category_id
@@ -110,20 +110,15 @@ class AudioReader(object):
         with tf.device('/cpu:0'):
             self.queue_audio = tf.placeholder(dtype=tf.float32,
                                               shape=[self.sample_size, 1])
+
             self.queue_gc = tf.placeholder(dtype=tf.int32,
                                            shape=[])
+
             self.queue_lc = tf.placeholder(
                 dtype=tf.float32,
                 shape=[np.ceil(self.sample_size / 512 + 1).astype(np.int32),
                        self.lc_channels])
-            # self.queue = tf.PaddingFIFOQueue(
-            #     capacity=queue_size,
-            #     dtypes=[tf.float32, tf.int32, tf.float32],
-            #     shapes=[[self.sample_size, 1],
-            #             [],
-            #             # this is really how librosa calculate length of piptrack
-            #             [np.ceil(self.sample_size/512+1).astype(np.int32),
-            #              self.lc_channels]])
+
             self.queue = tf.RandomShuffleQueue(
                 capacity=queue_size,
                 min_after_dequeue=5,
@@ -133,28 +128,10 @@ class AudioReader(object):
                         # this is really how librosa calculate length of piptrack
                         [np.ceil(self.sample_size / 512 + 1).astype(np.int32),
                          self.lc_channels]])
+
             self.enqueue_op = self.queue.enqueue([self.queue_audio,
                                                   self.queue_gc,
                                                   self.queue_lc])
-
-            # self.dequeue_op = self.queue.dequeue()
-
-            # self.sample_placeholder = tf.placeholder(tf.float32, shape=None)
-            # self.queue = tf.PaddingFIFOQueue(queue_size, ['float32'],
-            #                                  shapes=[(self.sample_size, 1)])
-            # self.enqueue_op = self.queue.enqueue([self.sample_placeholder])
-
-            # if self.gc_enabled:
-            #     self.id_placeholder = tf.placeholder(dtype=tf.int32, shape=())
-            #     self.gc_queue = tf.PaddingFIFOQueue(queue_size, ['int32'],
-            #                                         shapes=[()])
-            #     self.gc_enqueue = self.gc_queue.enqueue([self.id_placeholder])
-            #
-            # if self.lc_enabled:
-            #     self.lc_placeholder = tf.placeholder(dtype=tf.float32, shape=None)
-            #     self.lc_queue = tf.PaddingFIFOQueue(queue_size, ['float32'],
-            #                                         shapes=[(None, 88)])
-            #     self.lc_enqueue = self.lc_queue.enqueue([self.lc_placeholder])
 
         # TODO Find a better way to check this.
         # Checking inside the AudioReader's thread makes it hard to terminate
@@ -182,24 +159,10 @@ class AudioReader(object):
             self.gc_cardinality = None
 
     def get_batch(self, batch_size):
-        # audio_batch, gc_batch, lc_batch = tf.train.shuffle_batch(
-        #     self.dequeue_op,
-        #     batch_size,
-        #     capacity=10 * batch_size,
-        #     min_after_dequeue=5)
         audio_batch, gc_batch, lc_batch = self.queue.dequeue_many(batch_size)
         return {'audio_batch': audio_batch,
                 'gc_batch': gc_batch,
                 'lc_batch': lc_batch}
-
-    # def dequeue(self, num_elements):
-    #     return self.queue.dequeue_many(num_elements)
-
-    # def dequeue_gc(self, num_elements):
-    #     return self.gc_queue.dequeue_many(num_elements)
-    #
-    # def dequeue_lc(self, num_elements):
-    #     return self.lc_queue.dequeue_many(num_elements)
 
     def enqueue(self, sess):
         stop = False
@@ -207,9 +170,9 @@ class AudioReader(object):
         while not stop:
             iterator = load_generic_audio(self.audio_dir, self.sample_rate)
             for audio, filename, category_id in iterator:
-                # if self.coord.should_stop():
-                #     stop = True
-                #     break
+                if self.coord.should_stop():
+                    stop = True
+                    break
 
                 offset = np.random.randint(0, audio.shape[0] - self.sample_size)
                 crop = audio[offset:offset + self.sample_size, :]
@@ -220,9 +183,9 @@ class AudioReader(object):
                     category_id = None
 
                 if self.lc_enabled:
-                    # reshape piece into 1-D audio signal
+                    # Reshape piece into 1-D audio signal
                     crop = np.reshape(crop, (-1,))
-                    lc = self._midi_notes_encoding(crop)
+                    lc = self.midi_notes_encoding(crop)
                     crop = np.reshape(crop, (-1, 1))
                 else:
                     lc = np.empty([1, self.lc_channels], dtype=np.float32)
@@ -230,20 +193,13 @@ class AudioReader(object):
                 sess.run(self.enqueue_op, feed_dict={self.queue_audio: crop,
                                                      self.queue_gc: category_id,
                                                      self.queue_lc: lc})
+                # ENABLE this for debug purpose
                 # print("----------------> ADDED TO QUEUE")
 
-    # def start_threads(self, sess, n_threads=1):
-    #     for _ in range(n_threads):
-    #         thread = threading.Thread(target=self.thread_main, args=(sess,))
-    #         thread.daemon = True  # Thread will close when parent quits.
-    #         thread.start()
-    #         self.threads.append(thread)
-    #     return self.threads
-
     @staticmethod
-    def _midi_notes_encoding(audio):
-        """
-        compute frame-based midi encoding of audio
+    def midi_notes_encoding(audio):
+        """Compute frame-based midi encoding of audio
+        
         :param audio: 1-D array of audio time series 
         """
         pitches, magnitudes = librosa.piptrack(audio)
@@ -251,19 +207,21 @@ class AudioReader(object):
         magnitudes = np.transpose(magnitudes)
         lc = np.zeros((pitches.shape[0], 88), dtype=np.float32)
         for i in range(pitches.shape[0]):
-            # count non-zero entries of pitches
+            # Count non-zero entries of pitches
             nz_count = len(np.nonzero(pitches[i])[0])
-            # keep a maximum of 6 detected pitches
+            # Keep a maximum of 6 detected pitches
             num_ind_to_keep = min(nz_count, 6)
             ind_of_largest_pitches = np.argpartition(
                 magnitudes[i], -num_ind_to_keep)[-num_ind_to_keep:] \
                 if num_ind_to_keep != 0 else []
-            # convert the largest pitches to midi notes
+            # Convert the largest pitches to midi notes
             overtone_limit = librosa.midi_to_hz(96)[0]
             ind_of_largest_pitches = filter(
-                lambda x: pitches[i, x] <= overtone_limit, ind_of_largest_pitches)
-            midi_notes = librosa.hz_to_midi(pitches[i, ind_of_largest_pitches]).round()
-            # normalize magnitudes of pitches
+                lambda x: pitches[i, x] <= overtone_limit,
+                ind_of_largest_pitches)
+            midi_notes = librosa.hz_to_midi(pitches[i, ind_of_largest_pitches])
+            midi_notes = midi_notes.round()
+            # Normalize magnitudes of pitches
             midi_mags = magnitudes[i, ind_of_largest_pitches] / \
                         np.linalg.norm(magnitudes[i, ind_of_largest_pitches], 1)
             np.put(lc[i], midi_notes.astype(np.int64) - [9], midi_mags)

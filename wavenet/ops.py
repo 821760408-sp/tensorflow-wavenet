@@ -100,9 +100,8 @@ def mu_law_decode(x, quantization_channels=256):
     with tf.name_scope('decode'):
         mu = quantization_channels - 1
         x = tf.cast(x, tf.float32)
-        out = (x + 0.5) * 2. / (mu + 1)
+        out = 2 * (x / mu) - 1
         out = tf.sign(out) / mu * ((1 + mu)**tf.abs(out) - 1)
-        out = tf.where(tf.equal(x, 0), x, out)
         return out
 
 # https://github.com/tensorflow/magenta/blob/master/magenta/models/nsynth/wavenet/masked.py#L36

@@ -3,7 +3,7 @@ from __future__ import division
 import numpy as np
 import tensorflow as tf
 
-from .ops import mu_law_encode, conv1d
+from .ops import mu_law_encode, mu_law_decode, conv1d, shift_right
 
 
 def create_embedding_table(name, shape):
@@ -489,12 +489,15 @@ class WaveNetModel(object):
         :return: Prediction, loss, and quantized input
         """
         with tf.name_scope(name):
+            # values of input_quantized in [-128., 128.]
             input_quantized = mu_law_encode(input_batch,
                                             self.quantization_channels)
             input_scaled = tf.cast(input_quantized, tf.float32) / 128.0
             assert len(input_scaled.get_shape()) == 3
 
-            logits = self._create_network(input_scaled, gc_batch, lc_batch)
+            input_batch = shift_right(input_scaled)
+
+            logits = self._create_network(input_batch, gc_batch, lc_batch)
             probs = tf.nn.softmax(logits, name='softmax')
             input_indices = tf.cast(tf.reshape(input_quantized, [-1]),
                                     tf.int32) + 128
@@ -531,8 +534,11 @@ class WaveNetModel(object):
         with tf.name_scope('start_conv'):
             weights = self.variables['start_conv']['weights']
             biases = self.variables['start_conv']['biases']
-        return self._generator_conv(input_batch, state_batch,
-                                    weights, biases)
+        with tf.name_scope('skip_start'):
+            skip_weights = self.variables['skip_start']['weights']
+            skip_biases = self.variables['skip_start']['biases']
+        return (self._generator_conv(input_batch, state_batch, weights, biases),
+                self._generator_conv(input_batch, state_batch, skip_weights, skip_biases))
 
     def _generator_dilation_layer(self,
                                   input_batch,
@@ -657,8 +663,10 @@ class WaveNetModel(object):
         init_ops.append(init)
         push_ops.append(push)
 
-        current_layer = self._generator_start_layer(
-            current_layer, current_state)
+        current_layer, skip_conn = self._generator_start_layer(current_layer,
+                                                               current_state)
+
+        skip_connection.append(skip_conn)
 
         # Add all defined dilation layers.
         with tf.name_scope('dilated_stack'):
@@ -762,10 +770,13 @@ class WaveNetModel(object):
             # encoded = tf.one_hot(waveform, self.quantization_channels)
             # encoded = tf.reshape(encoded, [-1, self.quantization_channels])
             waveform = tf.reshape(waveform, [-1, self.input_channels])
-            waveform_scaled = tf.cast(waveform, tf.float32) / 128.0
+            # `waveform` now [0, 255], needs to be [-1, 1]
+            # Inverse mu-law
+            waveform = mu_law_decode(waveform, self.quantization_channels)
+            # waveform = tf.cast(waveform - 128, tf.float32) / 128.0
             # waveform.set_shape([-1, self.input_channels])
 
-            raw_output = self._create_generator(waveform_scaled,
+            raw_output = self._create_generator(waveform,
                                                 global_condition,
                                                 local_condition)
             out = tf.reshape(raw_output, [-1, self.quantization_channels])

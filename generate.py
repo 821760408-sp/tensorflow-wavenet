@@ -153,7 +153,9 @@ def main():
     with open(args.wavenet_params, 'r') as config_file:
         wavenet_params = json.load(config_file)
 
-    sess = tf.Session(config=tf.ConfigProto(device_count={'GPU': 0}))
+    sess = tf.Session(
+        # config=tf.ConfigProto(device_count={'GPU': 0})
+                      )
 
     # Build the WaveNet model
     net = WaveNetModel(
@@ -170,18 +172,19 @@ def main():
     # Create placeholders
     # Default to fast generation
     samples = tf.placeholder(tf.int32)
-    lc = tf.placeholder(tf.float32)
-    gc = args.gc_id
+    lc = tf.placeholder(tf.float32) if args.lc_embedding else None
+    gc = args.gc_id or None
 
     # TODO: right now we pre-save lc embeddings in the same length
     # as the audio we'd like to generate so they're naturally algined.
     # Add functionality to load `args.n_samples` worth of embeddings
     # from pre-saved (full-length) embeddings.
-    lc_embedding = load_lc_embedding(args.lc_embedding)
-    lc_embedding = tf.convert_to_tensor(lc_embedding)
-    lc_embedding = tf.reshape(lc_embedding, [1, -1, args.lc_channels])
-    lc_embedding = net._enc_upsampling_conv(lc_embedding, args.n_samples)
-    lc_embedding = tf.reshape(lc_embedding, [-1, args.lc_channels])
+    if args.lc_embedding is not None:
+        lc_embedding = load_lc_embedding(args.lc_embedding)
+        lc_embedding = tf.convert_to_tensor(lc_embedding)
+        lc_embedding = tf.reshape(lc_embedding, [1, -1, args.lc_channels])
+        lc_embedding = net._enc_upsampling_conv(lc_embedding, args.n_samples)
+        lc_embedding = tf.reshape(lc_embedding, [-1, args.lc_channels])
 
     # TODO: verify this implementation vs orig. Github
     # shape: [self.quantization_channels]
@@ -233,14 +236,18 @@ def main():
             sess.run(outputs, feed_dict={samples: x, lc: lc_})
         print('Done.')
 
-    lc_embedding = sess.run(lc_embedding)
+    if args.lc_embedding is not None:
+        lc_embedding = sess.run(lc_embedding)
     last_sample_timestamp = datetime.now()
     for step in range(args.n_samples):
         # Group the ops we need to run
         outputs = [next_sample]
         outputs.extend(net.push_ops)
         window = waveform[-1]
-        lc_ = lc_embedding[step, :]
+        if args.lc_embedding is not None:
+            lc_ = lc_embedding[step, :]
+        else:
+            lc_ = None
 
         # Run the WaveNet to predict the next sample.
         outputs = sess.run(outputs, feed_dict={samples: window, lc: lc_})

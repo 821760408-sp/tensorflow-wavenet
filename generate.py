@@ -12,9 +12,10 @@ import tensorflow as tf
 
 from wavenet import WaveNetModel, mu_law_decode, mu_law_encode
 
-N_SAMPLES = 22050 * 30
+SECS = 1
+N_SAMPLES = 22050 * SECS
 TEMPERATURE = 1.0
-LOGDIR = './logdir'
+LOGDIR = './logdir-256layers'
 WAVENET_PARAMS = './wavenet_params.json'
 SAVE_EVERY = None
 
@@ -36,7 +37,9 @@ def get_arguments():
 
     parser = argparse.ArgumentParser(description='WaveNet generation script')
     parser.add_argument(
-        'checkpoint', type=str, help='Which model checkpoint to generate from')
+        '--checkpoint',
+        type=str,
+        help='Which model checkpoint to generate from')
     parser.add_argument(
         '--n_samples',
         type=int,
@@ -89,6 +92,12 @@ def get_arguments():
         type=int,
         default=None,
         help='ID of category to generate, if globally conditioned.')
+    parser.add_argument(
+        '--lc_channels',
+        type=int,
+        default=None,
+        help='Number of local condition embedding channels. Omit if no '
+             'lc_embedding.')
     parser.add_argument(
         '--lc_embedding',
         type=str,
@@ -144,7 +153,7 @@ def main():
     with open(args.wavenet_params, 'r') as config_file:
         wavenet_params = json.load(config_file)
 
-    sess = tf.Session()
+    sess = tf.Session(config=tf.ConfigProto(device_count={'GPU': 0}))
 
     # Build the WaveNet model
     net = WaveNetModel(
@@ -159,10 +168,9 @@ def main():
         lc_channels=args.lc_channels)
 
     # Create placeholders
-    samp_len = 1  # fast generation
-    samples = tf.placeholder(tf.int32, shape=[samp_len])  # sampVal vector
-    lc = tf.placeholder(tf.float32, shape=[samp_len, args.lc_channels])
-
+    # Default to fast generation
+    samples = tf.placeholder(tf.int32)
+    lc = tf.placeholder(tf.float32)
     gc = args.gc_id
 
     # TODO: right now we pre-save lc embeddings in the same length
@@ -170,6 +178,8 @@ def main():
     # Add functionality to load `args.n_samples` worth of embeddings
     # from pre-saved (full-length) embeddings.
     lc_embedding = load_lc_embedding(args.lc_embedding)
+    lc_embedding = tf.convert_to_tensor(lc_embedding)
+    lc_embedding = tf.reshape(lc_embedding, [1, -1, args.lc_channels])
     lc_embedding = net._enc_upsampling_conv(lc_embedding, args.n_samples)
     lc_embedding = tf.reshape(lc_embedding, [-1, args.lc_channels])
 
@@ -185,8 +195,10 @@ def main():
         if not ('state_buffer' in var.name or 'pointer' in var.name)}
     saver = tf.train.Saver(variables_to_restore)
 
-    print('Restoring model from {}'.format(args.checkpoint))
-    saver.restore(sess, args.checkpoint)
+    ckpt = tf.train.get_checkpoint_state(args.checkpoint)
+    if ckpt and ckpt.model_checkpoint_path:
+        saver.restore(sess, ckpt.model_checkpoint_path)
+        print('Restoring model from {}'.format(ckpt.model_checkpoint_path))
 
     # Convert mu-law encoded samples back to (-1, 1) of R
     quantization_channels = wavenet_params['quantization_channels']
@@ -221,6 +233,7 @@ def main():
             sess.run(outputs, feed_dict={samples: x, lc: lc_})
         print('Done.')
 
+    lc_embedding = sess.run(lc_embedding)
     last_sample_timestamp = datetime.now()
     for step in range(args.n_samples):
         # Group the ops we need to run
@@ -230,7 +243,7 @@ def main():
         lc_ = lc_embedding[step, :]
 
         # Run the WaveNet to predict the next sample.
-        outputs, _ = sess.run(outputs, feed_dict={samples: window, lc: lc_})
+        outputs = sess.run(outputs, feed_dict={samples: window, lc: lc_})
         pred = outputs[0]
 
         # Scale prediction distribution using temperature.

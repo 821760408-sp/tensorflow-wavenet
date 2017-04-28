@@ -560,7 +560,7 @@ class WaveNetModel(object):
             lc_weights = variables['lc_conv']['weights']
             lc_biases = variables['lc_conv']['biases']
             lc_weights = lc_weights[0, :, :]
-            lc_biases = lc_biases[0, :, :]
+            # lc_biases = lc_biases[0, :, :]
             # TODO: shape lc_batch (should be [1, 88], where `1` is time?)
             # lc_batch = tf.reshape(lc_batch, shape=(1, -1))
             # weights_lc_filter = variables['lc_filtweights']
@@ -576,7 +576,7 @@ class WaveNetModel(object):
             gc_weights = variables['gc_conv']['weights']
             gc_biases = variables['gc_conv']['biases']
             gc_weights = gc_weights[0, :, :]
-            gc_biases = gc_biases[0, :, :]
+            # gc_biases = gc_biases[0, :, :]
 
             dilation_out += tf.matmul(gc_batch, gc_weights)
             dilation_out = tf.nn.bias_add(dilation_out, gc_biases)
@@ -605,7 +605,7 @@ class WaveNetModel(object):
         res_weights = variables['residual_conv']['weights']
         res_biases = variables['residual_conv']['biases']
         res_weights = res_weights[0, :, :]
-        res_biases = res_biases[0, :, :]
+        # res_biases = res_biases[0, :, :]
 
         input_batch += tf.matmul(dilation_out, res_weights)
         input_batch = tf.nn.bias_add(input_batch, res_biases)
@@ -614,7 +614,7 @@ class WaveNetModel(object):
         skip_weights = variables['skip_conn']['weights']
         skip_biases = variables['skip_conn']['biases']
         skip_weights = skip_weights[0, :, :]
-        skip_biases = skip_biases[0, :, :]
+        # skip_biases = skip_biases[0, :, :]
         skip_connection = tf.matmul(dilation_out, skip_weights)
         skip_connection = tf.nn.bias_add(skip_connection, skip_biases)
 
@@ -647,10 +647,10 @@ class WaveNetModel(object):
         q = tf.FIFOQueue(
             capacity=1,
             dtypes=[tf.float32],
-            shapes=[(self.batch_size, self.input_channels)],
-            names=['sample_queue'])
+            shapes=[(self.batch_size, self.input_channels)])
+
         init = q.enqueue_many(
-            tf.zeros((1, self.batch_size, self.input_channels)))
+            tf.zeros([1, self.batch_size, self.input_channels], tf.float32))
 
         current_state = q.dequeue()
         push = q.enqueue([current_layer])
@@ -668,10 +668,9 @@ class WaveNetModel(object):
                         dilation,
                         dtypes=[tf.float32],
                         shapes=[(self.batch_size, self.residual_channels)])
-                    init = q.enqueue_many(
-                        tf.zeros((dilation,
-                                  self.batch_size,
-                                  self.residual_channels)))
+                    init = q.enqueue_many(tf.zeros([dilation,
+                                                    self.batch_size,
+                                                    self.residual_channels]))
 
                     current_state = q.dequeue()
                     push = q.enqueue([current_layer])
@@ -693,7 +692,7 @@ class WaveNetModel(object):
             pp_weights = self.variables['postprocessing']['weights']
             pp_weights = pp_weights[0, :, :]
             pp_biases = self.variables['postprocessing']['biases']
-            pp_biases = pp_biases[0, :, :]
+            # pp_biases = pp_biases[0, :, :]
             skip_connection = tf.matmul(skip_connection, pp_weights)
             skip_connection = tf.nn.bias_add(skip_connection, pp_biases)
 
@@ -715,7 +714,7 @@ class WaveNetModel(object):
                 lc_weights = self.variables['lc_conv_out']['weights']
                 lc_biases = self.variables['lc_conv_out']['biases']
                 lc_weights = lc_weights[0, :, :]
-                lc_biases = lc_biases[0, :, :]
+                # lc_biases = lc_biases[0, :, :]
                 skip_connection += tf.matmul(lc_batch, lc_weights)
                 skip_connection = tf.nn.bias_add(skip_connection, lc_biases)
 
@@ -723,7 +722,7 @@ class WaveNetModel(object):
                 gc_weights = self.variables['gc_conv_out']['weights']
                 gc_biases = self.variables['gc_conv_out']['biases']
                 gc_weights = gc_weights[0, :, :]
-                gc_biases = gc_biases[0, :, :]
+                # gc_biases = gc_biases[0, :, :]
                 skip_connection += tf.matmul(gc_batch, gc_weights)
                 skip_connection = tf.nn.bias_add(skip_connection, gc_biases)
 
@@ -733,7 +732,7 @@ class WaveNetModel(object):
             logit_weights = self.variables['logit']['weights']
             logit_biases = self.variables['logit']['biases']
             logit_weights = logit_weights[0, :, :]
-            logit_biases = logit_biases[0, :, :]
+            # logit_biases = logit_biases[0, :, :]
             logits = tf.matmul(skip_connection, logit_weights)
             logits = tf.nn.bias_add(logits, logit_biases)
 
@@ -763,9 +762,10 @@ class WaveNetModel(object):
             # encoded = tf.one_hot(waveform, self.quantization_channels)
             # encoded = tf.reshape(encoded, [-1, self.quantization_channels])
             waveform = tf.reshape(waveform, [-1, self.input_channels])
-            waveform.set_shape([-1, self.input_channels])
+            waveform_scaled = tf.cast(waveform, tf.float32) / 128.0
+            # waveform.set_shape([-1, self.input_channels])
 
-            raw_output = self._create_generator(waveform,
+            raw_output = self._create_generator(waveform_scaled,
                                                 global_condition,
                                                 local_condition)
             out = tf.reshape(raw_output, [-1, self.quantization_channels])

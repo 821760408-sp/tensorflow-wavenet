@@ -124,6 +124,9 @@ def write_wav(waveform, sample_rate, filename):
     print('Updated wav file at {}'.format(filename))
 
 
+# TODO: there seems to be something wrong with this method (encode?)
+# because it populates `waveform` with only samples from -1 to 0
+# (see Audacity)
 def create_seed(filename,
                 sample_rate,
                 quantization_channels,
@@ -272,8 +275,12 @@ def main():
                 err_msg='Prediction scaling at temperature=1.0 '
                         'is not working as intended.')
 
+        # TODO: verify
+        # sample = np.random.choice(
+        #     np.arange(quantization_channels), p=scaled_prediction)
         sample = np.random.choice(
-            np.arange(quantization_channels), p=scaled_prediction)
+            np.arange(-quantization_channels // 2, quantization_channels // 2),
+            p=scaled_prediction)
         waveform.append(sample)
 
         # Show progress only once per second.

@@ -24,6 +24,7 @@ optimizer_factory = {'adam': create_adam_optimizer,
                      'sgd': create_sgd_optimizer,
                      'rmsprop': create_rmsprop_optimizer}
 
+
 # https://github.com/tensorflow/magenta/blob/master/magenta/models/nsynth/wavenet/masked.py#L53
 def time_to_batch(x, dilation):
     with tf.name_scope('time_to_batch'):
@@ -36,10 +37,12 @@ def time_to_batch(x, dilation):
             shape[0] * dilation, shape[1] // dilation, shape[2]
         ])
         y.set_shape([
-            mul_or_none(shape[0], dilation), mul_or_none(shape[1], 1. / dilation),
+            mul_or_none(shape[0], dilation),
+            mul_or_none(shape[1], 1. / dilation),
             shape[2]
         ])
         return y
+
 
 # https://github.com/tensorflow/magenta/blob/master/magenta/models/nsynth/wavenet/masked.py#L85
 def batch_to_time(x, dilation):
@@ -52,6 +55,7 @@ def batch_to_time(x, dilation):
                      mul_or_none(shape[1], dilation),
                      shape[2]])
         return y
+
 
 # https://github.com/tensorflow/magenta/blob/master/magenta/models/nsynth/wavenet/masked.py#L106
 def conv1d(x,
@@ -85,8 +89,8 @@ def conv1d(x,
     y.set_shape([batch_size, length, filt_out_channels])
     return y
 
+
 # https://github.com/tensorflow/magenta/blob/master/magenta/models/nsynth/utils.py#L64
-# TODO: resolve different input ranges of encode and decode
 def mu_law_encode(audio, quantization_channels=256):
     """Quantizes waveform amplitudes."""
     with tf.name_scope('encode'):
@@ -95,45 +99,49 @@ def mu_law_encode(audio, quantization_channels=256):
         out = tf.cast(tf.floor(out * 128), tf.int8)
         return out
 
+
 # https://github.com/tensorflow/magenta/blob/master/magenta/models/nsynth/utils.py#L79
 def mu_law_decode(x, quantization_channels=256):
     """Recovers waveform from quantized values."""
     with tf.name_scope('decode'):
-        mu = quantization_channels - 1
         x = tf.cast(x, tf.float32)
-        out = 2 * (x / mu) - 1
-        out = tf.sign(out) / mu * ((1 + mu)**tf.abs(out) - 1)
+        mu = quantization_channels - 1
+        out = (x + 0.5) * 2. / (mu + 1)
+        out = tf.sign(out) / mu * ((1 + mu) ** tf.abs(out) - 1)
+        out = tf.where(tf.equal(x, 0), x, out)
         return out
+
 
 # https://github.com/tensorflow/magenta/blob/master/magenta/models/nsynth/wavenet/masked.py#L36
 def mul_or_none(a, b):
-  """Return the element wise multiplicative of the inputs.
+    """Return the element wise multiplicative of the inputs.
+  
+    If either input is None, we return None.
+  
+    Args:
+      a: A tensor input.
+      b: Another tensor input with the same type as a.
+  
+    Returns:
+      None if either input is None. Otherwise returns a * b.
+    """
+    if a is None or b is None:
+        return None
+    return a * b
 
-  If either input is None, we return None.
-
-  Args:
-    a: A tensor input.
-    b: Another tensor input with the same type as a.
-
-  Returns:
-    None if either input is None. Otherwise returns a * b.
-  """
-  if a is None or b is None:
-    return None
-  return a * b
 
 # https://github.com/tensorflow/magenta/blob/master/magenta/models/nsynth/wavenet/masked.py#L20
 def shift_right(x):
-  """Shift the input over by one and a zero to the front.
-
-  Args:
-    x: The [mb, time, channels] tensor input.
-
-  Returns:
-    x_sliced: The [mb, time, channels] tensor output.
-  """
-  shape = x.get_shape().as_list()
-  x_padded = tf.pad(x, [[0, 0], [1, 0], [0, 0]])
-  x_sliced = tf.slice(x_padded, [0, 0, 0], tf.stack([-1, shape[1], -1]))
-  x_sliced.set_shape(shape)
-  return x_sliced
+    """Shift the input over by one and a zero to the front.
+  
+    Args:
+      x: The [mb, time, channels] tensor input.
+  
+    Returns:
+      x_sliced: The [mb, time, channels] tensor output.
+    """
+    shape = x.get_shape().as_list()
+    x_padded = tf.pad(x, [[0, 0], [1, 0], [0, 0]])
+    x_sliced = tf.slice(x_padded, [0, 0, 0], tf.stack([-1, shape[1], -1]))
+    x_sliced.set_shape(shape)
+    return x_sliced

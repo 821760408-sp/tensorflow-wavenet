@@ -232,6 +232,7 @@ def main():
         for i, x in enumerate(waveform[-net.receptive_field: -1]):
             if i % 100 == 0:
                 print('Priming sample {}'.format(i))
+            lc_ = lc_embedding[i, :]  # This is unnecessary and redundant
             sess.run(outputs, feed_dict={samples: x, lc: None})
         print('Done.')
 

@@ -86,6 +86,7 @@ def conv1d(x,
     return y
 
 # https://github.com/tensorflow/magenta/blob/master/magenta/models/nsynth/utils.py#L64
+# TODO: resolve different input ranges of encode and decode
 def mu_law_encode(audio, quantization_channels=256):
     """Quantizes waveform amplitudes."""
     with tf.name_scope('encode'):

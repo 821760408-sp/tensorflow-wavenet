@@ -12,10 +12,10 @@ import tensorflow as tf
 
 from wavenet import WaveNetModel, mu_law_decode, mu_law_encode
 
-SECS = 1
+SECS = 10
 N_SAMPLES = 22050 * SECS
 TEMPERATURE = 1.0
-LOGDIR = './logdir-256layers'
+LOGDIR = './logdir-256-dl'
 WAVENET_PARAMS = './wavenet_params.json'
 SAVE_EVERY = None
 
@@ -154,7 +154,7 @@ def main():
         wavenet_params = json.load(config_file)
 
     sess = tf.Session(
-        # config=tf.ConfigProto(device_count={'GPU': 0})
+        config=tf.ConfigProto(device_count={'GPU': 0})
                       )
 
     # Build the WaveNet model
@@ -215,8 +215,11 @@ def main():
         waveform = sess.run(seed).tolist()
     else:
         # Silence with a single random sample at the end.
-        waveform = [quantization_channels / 2] * (net.receptive_field - 1)
-        waveform.append(np.random.randint(quantization_channels))
+        # waveform = [quantization_channels / 2] * (net.receptive_field - 1)
+        # waveform.append(np.random.randint(quantization_channels))
+        waveform = [0] * (net.receptive_field - 1)
+        waveform.append(np.random.randint(-quantization_channels // 2,
+                                          quantization_channels // 2))
 
     if args.wav_seed:
         # When using the incremental generation, we need to
@@ -250,7 +253,10 @@ def main():
             lc_ = None
 
         # Run the WaveNet to predict the next sample.
-        outputs = sess.run(outputs, feed_dict={samples: window, lc: lc_})
+        if lc_ is not None:
+            outputs = sess.run(outputs, feed_dict={samples: window, lc: lc_})
+        else:
+            outputs = sess.run(outputs, feed_dict={samples: window})
         pred = outputs[0]
 
         # Scale prediction distribution using temperature.

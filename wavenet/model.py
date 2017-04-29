@@ -489,9 +489,9 @@ class WaveNetModel(object):
         :return: Prediction, loss, and quantized input
         """
         with tf.name_scope(name):
-            # values of input_quantized in [-128., 128.]
             input_quantized = mu_law_encode(input_batch,
                                             self.quantization_channels)
+            # values of input_quantized in [-128., 128.]
             input_scaled = tf.cast(input_quantized, tf.float32) / 128.0
             assert len(input_scaled.get_shape()) == 3
 
@@ -537,8 +537,11 @@ class WaveNetModel(object):
         with tf.name_scope('skip_start'):
             skip_weights = self.variables['skip_start']['weights']
             skip_biases = self.variables['skip_start']['biases']
+            skip_weights = skip_weights[0, :, :]
+            skip_conn = tf.matmul(input_batch, skip_weights)
+            skip_conn = tf.nn.bias_add(skip_conn, skip_biases)
         return (self._generator_conv(input_batch, state_batch, weights, biases),
-                self._generator_conv(input_batch, state_batch, skip_weights, skip_biases))
+                skip_conn)
 
     def _generator_dilation_layer(self,
                                   input_batch,
@@ -767,14 +770,9 @@ class WaveNetModel(object):
             raise NotImplementedError("Incremental generation does not "
                                       "support filter_width > 2.")
         with tf.name_scope(name):
-            # encoded = tf.one_hot(waveform, self.quantization_channels)
-            # encoded = tf.reshape(encoded, [-1, self.quantization_channels])
             waveform = tf.reshape(waveform, [-1, self.input_channels])
             # `waveform` now [0, 255], needs to be [-1, 1]
-            # Inverse mu-law
-            waveform = mu_law_decode(waveform, self.quantization_channels)
-            # waveform = tf.cast(waveform - 128, tf.float32) / 128.0
-            # waveform.set_shape([-1, self.input_channels])
+            waveform = tf.cast(waveform - 128, tf.float32) / 128.0
 
             raw_output = self._create_generator(waveform,
                                                 global_condition,

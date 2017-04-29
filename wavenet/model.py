@@ -639,7 +639,7 @@ class WaveNetModel(object):
 
         return skip_connection, input_batch
 
-    def _create_generator(self, audio_batch, gc_batch, lc_batch):
+    def _create_generator(self, audio_batch, gc_batch=None, lc_batch=None):
         """Construct an efficient incremental generator."""
         init_ops = []
         push_ops = []

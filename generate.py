@@ -150,7 +150,7 @@ def main():
         wavenet_params = json.load(config_file)
 
     sess = tf.Session(
-        config=tf.ConfigProto(device_count={'GPU': 0})
+        # config=tf.ConfigProto(device_count={'GPU': 0})
                       )
 
     # Build the WaveNet model
@@ -204,7 +204,6 @@ def main():
     decode = mu_law_decode(samples, quantization_channels)
 
     if args.wav_seed:
-        # TODO: create lc according to seed
         seed = create_seed(args.wav_seed,
                            wavenet_params['sample_rate'],
                            quantization_channels,
@@ -217,6 +216,9 @@ def main():
         waveform = [0] * (net.receptive_field - 1)
         waveform.append(np.random.randint(-quantization_channels // 2,
                                           quantization_channels // 2))
+
+    if args.lc_embedding is not None:
+        lc_embedding = sess.run(lc_embedding)
 
     if args.wav_seed:
         # When using the incremental generation, we need to
@@ -232,12 +234,10 @@ def main():
         for i, x in enumerate(waveform[-net.receptive_field: -1]):
             if i % 100 == 0:
                 print('Priming sample {}'.format(i))
-            lc_ = lc_embedding[i, :]  # This is unnecessary and redundant
-            sess.run(outputs, feed_dict={samples: x, lc: None})
+            lc_ = lc_embedding[i, :]
+            sess.run(outputs, feed_dict={samples: x, lc: lc_})
         print('Done.')
 
-    if args.lc_embedding is not None:
-        lc_embedding = sess.run(lc_embedding)
     last_sample_timestamp = datetime.now()
     for step in range(args.n_samples):
         # Group the ops we need to run

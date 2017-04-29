@@ -129,10 +129,6 @@ def create_seed(filename,
                 quantization_channels,
                 window_size):
     audio, _ = librosa.load(filename, sr=sample_rate, mono=True)
-    # Normalize audio
-    audio = librosa.util.normalize(audio)
-    # Trim the last 5 seconds to account for music rollout
-    audio = audio[:-5 * sample_rate]
     quantized = mu_law_encode(audio, quantization_channels)
     cut_index = tf.cond(tf.size(quantized) < tf.constant(window_size),
                         lambda: tf.size(quantized),
@@ -208,6 +204,7 @@ def main():
     decode = mu_law_decode(samples, quantization_channels)
 
     if args.wav_seed:
+        # TODO: create lc according to seed
         seed = create_seed(args.wav_seed,
                            wavenet_params['sample_rate'],
                            quantization_channels,
@@ -235,8 +232,7 @@ def main():
         for i, x in enumerate(waveform[-net.receptive_field: -1]):
             if i % 100 == 0:
                 print('Priming sample {}'.format(i))
-            lc_ = lc_embedding[i, :]
-            sess.run(outputs, feed_dict={samples: x, lc: lc_})
+            sess.run(outputs, feed_dict={samples: x})
         print('Done.')
 
     if args.lc_embedding is not None:

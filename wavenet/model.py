@@ -771,8 +771,8 @@ class WaveNetModel(object):
                                       "support filter_width > 2.")
         with tf.name_scope(name):
             waveform = tf.reshape(waveform, [-1, self.input_channels])
-            # `waveform` now [0, 255], needs to be [-1, 1]
-            waveform = tf.cast(waveform - 128, tf.float32) / 128.0
+            # `waveform` now [-128, 128), needs to be [-1, 1)
+            waveform = tf.cast(waveform, tf.float32) / 128.0
 
             raw_output = self._create_generator(waveform,
                                                 global_condition,

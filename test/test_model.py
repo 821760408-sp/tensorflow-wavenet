@@ -262,6 +262,7 @@ class TestNet(tf.test.TestCase):
                     print("i: %d loss: %f" % (i, results[0]))
 
             loss_val = results[0]
+            print("finished training; loss: %f" % (loss_val))
 
             # Sanity check the initial loss was larger.
             self.assertGreater(initial_loss, max_allowed_loss)

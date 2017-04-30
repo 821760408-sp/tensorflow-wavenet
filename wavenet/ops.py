@@ -58,11 +58,7 @@ def batch_to_time(x, dilation):
 
 
 # https://github.com/tensorflow/magenta/blob/master/magenta/models/nsynth/wavenet/masked.py#L106
-def conv1d(x,
-           filt,
-           biases,
-           dilation=1,
-           causal=True):
+def conv1d(x, filt, biases, dilation=1, causal=True):
     """Fast 1D convolution that supports causal padding and dilation.
     
       :param x: the [bs, time, input_channes] float input tensor

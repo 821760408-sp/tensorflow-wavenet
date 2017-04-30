@@ -408,10 +408,7 @@ class WaveNetModel(object):
 
         return embedding
 
-    def _create_network(self,
-                        input_batch,
-                        gc_batch=None,
-                        lc_batch=None):
+    def _create_network(self, input_batch, gc_batch=None, lc_batch=None):
         """Construct the WaveNet network.
         :param input_batch: The [nb, time, channels] right-shifted input tensor.
         :param gc_batch: 
@@ -476,11 +473,7 @@ class WaveNetModel(object):
 
         return logits
 
-    def loss(self,
-             input_batch,
-             gc_batch=None,
-             lc_batch=None,
-             name='wavenet'):
+    def loss(self, input_batch, gc_batch=None, lc_batch=None, name='wavenet'):
         """Creates a WaveNet network and returns the autoencoding loss.
         :param input_batch: The [nb, time, 1] audio input tensor 
         :param gc_batch: 

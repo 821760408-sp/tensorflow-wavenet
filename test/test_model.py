@@ -181,7 +181,7 @@ class TestNet(tf.test.TestCase):
         self.momentum = MOMENTUM
         self.global_conditioning = True  # False
         self.train_iters = TRAIN_ITERATIONS
-        self.net = WaveNetModel(batch_size=1,
+        self.net = WaveNetModel(batch_size=3,  # 1
                                 dilations=[1, 2, 4, 8, 16, 32, 64,
                                            1, 2, 4, 8, 16, 32, 64],
                                 filter_width=2,
@@ -223,16 +223,20 @@ class TestNet(tf.test.TestCase):
         if self.global_conditioning:
             audio = np.pad(audio, ((0, 0), (self.net.receptive_field - 1, 0)),
                            'constant')
+            trimmed_len = audio.shape[1] // 64 * 64
+            audio = audio[:, :trimmed_len]
+            audio = audio.reshape(NUM_SPEAKERS, trimmed_len, 1)
+            audio_placeholder = tf.placeholder(
+                dtype=tf.float32,
+                shape=[NUM_SPEAKERS, trimmed_len, 1])
         else:
             audio = np.pad(audio, (self.net.receptive_field - 1, 0),
                            'constant')
+            audio = audio[:audio.shape[0] // 64 * 64]
+            audio = audio.reshape(1, audio.shape[0], 1)
+            audio_placeholder = tf.placeholder(dtype=tf.float32,
+                                               shape=[1, audio.shape[1], 1])
 
-        # TODO: to fix--quick hack for global_conditioning=False
-        audio = audio[:audio.shape[0] // 64 * 64]
-        audio = audio.reshape(1, audio.shape[0], 1)
-
-        audio_placeholder = tf.placeholder(dtype=tf.float32,
-                                           shape=[1, audio.shape[1], 1])
         gc_placeholder = tf.placeholder(dtype=tf.int32,
                                         shape=[NUM_SPEAKERS, 1]) \
             if self.global_conditioning else None

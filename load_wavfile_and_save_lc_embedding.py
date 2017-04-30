@@ -9,7 +9,7 @@ from wavenet.audio_reader import AudioReader
 def load_wav(wavfile, sr, mono=True):
     audio, _ = librosa.load(wavfile, sr=sr, mono=mono)
     # Normalize audio
-    audio = librosa.util.normalize(audio)
+    audio = librosa.util.normalize(audio) * 0.8
     lc = AudioReader.midi_notes_encoding(audio)
 
     fn = os.path.abspath(wavfile).strip('.wav')

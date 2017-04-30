@@ -57,7 +57,7 @@ def load_generic_audio(directory, sample_rate):
             category_id = int(ids[0][0])
         audio, _ = librosa.load(filename, sr=sample_rate, mono=True)
         # Normalize audio
-        audio = librosa.util.normalize(audio)
+        audio = librosa.util.normalize(audio) * 0.8
         # Trim the last 5 seconds to account for music rollout
         audio = audio[:-5 * sample_rate]
         audio = np.reshape(audio, (-1, 1))

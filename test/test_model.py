@@ -276,10 +276,11 @@ class TestNet(tf.test.TestCase):
                     # Check fast-generated wveform.
                     print("we are getting here")
                     generated_waveforms, ids = generate_waveforms(sess,
-                        self.net, speaker_ids)
+                                                                  self.net,
+                                                                  speaker_ids)
                     for (waveform, id) in zip(generated_waveforms, ids):
                         print("Checking fast wf for id{}".format(id[0]))
-                        check_waveform( self.assertGreater, waveform, id[0])
+                        check_waveform(self.assertGreater, waveform, id[0])
 
                 else:
                     # Check incremental generation
@@ -287,98 +288,6 @@ class TestNet(tf.test.TestCase):
                         sess, self.net, None)
                     check_waveform(
                         self.assertGreater, generated_waveforms[0], None)
-
-
-
-# class TestNetWithBiases(TestNet):
-#     def setUp(self):
-#         print('TestNetWithBias setup.')
-#         sys.stdout.flush()
-#
-#         self.net = WaveNetModel(batch_size=1,
-#                                 dilations=[1, 2, 4, 8, 16, 32, 64,
-#                                            1, 2, 4, 8, 16, 32, 64],
-#                                 filter_width=2,
-#                                 residual_channels=32,
-#                                 dilation_channels=32,
-#                                 quantization_channels=QUANTIZATION_CHANNELS,
-#                                 use_biases=True,
-#                                 skip_channels=32)
-#         self.optimizer_type = 'sgd'
-#         self.learning_rate = 0.02
-#         self.generate = False
-#         self.momentum = MOMENTUM
-#         self.global_conditioning = False
-#         self.train_iters = TRAIN_ITERATIONS
-
-
-# class TestNetWithRMSProp(TestNet):
-#     def setUp(self):
-#         print('TestNetWithRMSProp setup.')
-#         sys.stdout.flush()
-#
-#         self.net = WaveNetModel(batch_size=1,
-#                                 dilations=[1, 2, 4, 8, 16, 32, 64,
-#                                            1, 2, 4, 8, 16, 32, 64],
-#                                 filter_width=2,
-#                                 residual_channels=32,
-#                                 dilation_channels=32,
-#                                 quantization_channels=QUANTIZATION_CHANNELS,
-#                                 skip_channels=256)
-#         self.optimizer_type = 'rmsprop'
-#         self.learning_rate = 0.001
-#         self.generate = True
-#         self.momentum = MOMENTUM
-#         self.train_iters = TRAIN_ITERATIONS
-#         self.global_conditioning = False
-
-
-# class TestNetWithScalarInput(TestNet):
-#     def setUp(self):
-#         print('TestNetWithScalarInput setup.')
-#         sys.stdout.flush()
-#
-#         self.net = WaveNetModel(batch_size=1,
-#                                 dilations=[1, 2, 4, 8, 16, 32, 64,
-#                                            1, 2, 4, 8, 16, 32, 64],
-#                                 filter_width=2,
-#                                 residual_channels=32,
-#                                 dilation_channels=32,
-#                                 quantization_channels=QUANTIZATION_CHANNELS,
-#                                 use_biases=True,
-#                                 skip_channels=32,
-#                                 scalar_input=True,
-#                                 initial_filter_width=4)
-#         self.optimizer_type = 'sgd'
-#         self.learning_rate = 0.01
-#         self.generate = False
-#         self.momentum = MOMENTUM
-#         self.global_conditioning = False
-#         self.train_iters = 1000
-
-
-# class TestNetWithGlobalConditioning(TestNet):
-#     def setUp(self):
-#         print('TestNetWithGlobalConditioning setup.')
-#         sys.stdout.flush()
-#
-#         self.optimizer_type = 'sgd'
-#         self.learning_rate = 0.01
-#         self.generate = True
-#         self.momentum = MOMENTUM
-#         self.global_conditioning = True
-#         self.train_iters = 1000
-#         self.net = WaveNetModel(batch_size=NUM_SPEAKERS,
-#                                 dilations=[1, 2, 4, 8, 16, 32, 64,
-#                                            1, 2, 4, 8, 16, 32, 64],
-#                                 filter_width=2,
-#                                 residual_channels=32,
-#                                 dilation_channels=32,
-#                                 quantization_channels=QUANTIZATION_CHANNELS,
-#                                 use_biases=True,
-#                                 skip_channels=256,
-#                                 global_condition_channels=NUM_SPEAKERS,
-#                                 global_condition_cardinality=NUM_SPEAKERS)
 
 
 if __name__ == '__main__':

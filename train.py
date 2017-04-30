@@ -162,6 +162,8 @@ def validate_directories(args):
     if logdir is None:
         logdir = get_default_logdir(logdir_root)
         print('Using default logdir: {}'.format(logdir))
+    else:
+        logdir = logdir + '-' + STARTED_DATESTRING
 
     restore_from = args.restore_from
     if restore_from is None:

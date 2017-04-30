@@ -15,7 +15,7 @@ from wavenet import WaveNetModel, mu_law_decode, mu_law_encode
 SECS = 10
 N_SAMPLES = 22050 * SECS
 TEMPERATURE = 1.0
-LOGDIR = './logdir-256-dl'
+LOGDIR = './logdir'
 WAVENET_PARAMS = './wavenet_params.json'
 SAVE_EVERY = None
 
@@ -124,9 +124,6 @@ def write_wav(waveform, sample_rate, filename):
     print('Updated wav file at {}'.format(filename))
 
 
-# TODO: there seems to be something wrong with this method (encode?)
-# because it populates `waveform` with only samples from -1 to 0
-# (see Audacity)
 def create_seed(filename,
                 sample_rate,
                 quantization_channels,

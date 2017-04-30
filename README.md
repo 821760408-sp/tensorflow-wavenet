@@ -173,3 +173,7 @@ context stacks or controlling what speech is generated.
 
 - [tex-wavenet](https://github.com/Zeta36/tensorflow-tex-wavenet), a WaveNet for text generation.
 - [image-wavenet](https://github.com/Zeta36/tensorflow-image-wavenet), a WaveNet for image generation.
+
+``
+python generate.py --checkpoint=logdir-256layers-copy/train/2017-04-28T00-18-29/ --logdir=logdir-256layers-copy/generate/ --wav_out_path=data_tmp/gen_10s_gc2_lc_01.wav --wav_seed=data_tmp/p01_001_10s.wav --gc_channels=7 --gc_cardinality=7 --gc_id=2 --lc_channels=88 --lc_embedding=data_tmp/p01_001_10s_2_lc_embedding.npy
+``

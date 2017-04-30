@@ -205,14 +205,10 @@ def main():
 
     # Load raw waveform from corpus.
     with tf.name_scope('create_inputs'):
-        # gc_enabled = args.gc_channels is not None
-        # lc_enabled = args.lc_channels is not None
         reader = AudioReader(
             args.data_dir,
             coord,
             sample_rate=wavenet_params['sample_rate'],
-            # gc_enabled=gc_enabled,
-            # lc_enabled=lc_enabled
             gc_channels=args.gc_channels,
             lc_channels=args.lc_channels)
         inputs_dict = reader.get_batch(args.batch_size)

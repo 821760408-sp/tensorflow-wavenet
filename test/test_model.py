@@ -255,8 +255,8 @@ class TestNet(tf.test.TestCase):
             sess.run(init)
             initial_loss = sess.run(loss, feed_dict=feed_dict)
             for i in range(self.train_iters):
-                # feed_dict, speaker_index = CreateTrainingFeedDict(
-                #     audio, speaker_ids, audio_placeholder, gc_placeholder, i)
+                feed_dict, speaker_index = CreateTrainingFeedDict(
+                    audio, speaker_ids, audio_placeholder, gc_placeholder, i)
                 [results] = sess.run([operations], feed_dict=feed_dict)
                 if i % 100 == 0:
                     print("i: %d loss: %f" % (i, results[0]))
@@ -394,4 +394,5 @@ class TestNet(tf.test.TestCase):
 
 
 if __name__ == '__main__':
-    tf.test.main()
+    with tf.Graph().as_default() as g:
+        tf.test.main()

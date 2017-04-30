@@ -59,7 +59,10 @@ def generate_waveform(sess, net, gc, samples_placeholder,
     waveform = [0] * net.receptive_field
 
     for sample in waveform[:-1]:
-        sess.run(operations, feed_dict={samples_placeholder: [sample]})
+        feed_dict = {samples_placeholder: [sample]}
+        if gc is not None:
+            feed_dict[gc_placeholder] = gc
+            sess.run(operations, feed_dict=feed_dict)
 
     for i in range(GENERATE_SAMPLES):
         if i % 100 == 0:

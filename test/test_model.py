@@ -11,7 +11,7 @@ from wavenet import (WaveNetModel, time_to_batch, batch_to_time, conv1d,
                      optimizer_factory, mu_law_decode)
 
 SAMPLE_RATE_HZ = 2000.0  # Hz
-TRAIN_ITERATIONS = 400
+TRAIN_ITERATIONS = 2000  # 400
 SAMPLE_DURATION = 0.5  # Seconds
 SAMPLE_PERIOD_SECS = 1.0 / SAMPLE_RATE_HZ
 MOMENTUM = 0.95
@@ -54,24 +54,18 @@ def make_sine_waves(global_conditioning):
     return amplitudes, speaker_ids
 
 
-def generate_waveform(sess, net, fast_generation, gc, samples_placeholder,
+def generate_waveform(sess, net, gc, samples_placeholder,
                       gc_placeholder, operations):
     waveform = [0] * net.receptive_field
-    if fast_generation:
-        for sample in waveform[:-1]:
-            sess.run(operations, feed_dict={samples_placeholder: [sample]})
+
+    for sample in waveform[:-1]:
+        sess.run(operations, feed_dict={samples_placeholder: [sample]})
 
     for i in range(GENERATE_SAMPLES):
         if i % 100 == 0:
             print("Generating {} of {}.".format(i, GENERATE_SAMPLES))
             sys.stdout.flush()
-        if fast_generation:
-            window = waveform[-1]
-        else:
-            if len(waveform) > net.receptive_field:
-                window = waveform[-net.receptive_field:]
-            else:
-                window = waveform
+        window = waveform[-1]
 
         # Run the WaveNet to predict the next sample.
         feed_dict = {samples_placeholder: window}
@@ -93,23 +87,18 @@ def generate_waveform(sess, net, fast_generation, gc, samples_placeholder,
     return decoded_waveform
 
 
-def generate_waveforms(sess, net, fast_generation, global_condition):
+def generate_waveforms(sess, net, global_condition):
     samples_placeholder = tf.placeholder(tf.int32)
     gc_placeholder = tf.placeholder(tf.int32) \
         if global_condition is not None else None
 
     net.batch_size = 1
 
-    if fast_generation:
-        next_sample_probs = net.predict_proba_incremental(samples_placeholder,
-                                                          global_condition)
-        sess.run(net.init_ops)
-        operations = [next_sample_probs]
-        operations.extend(net.push_ops)
-    else:
-        next_sample_probs = net.predict_proba(samples_placeholder,
-                                              gc_placeholder)
-        operations = [next_sample_probs]
+    next_sample_probs = net.predict_proba_incremental(samples_placeholder,
+                                                      gc_placeholder)
+    sess.run(net.init_ops)
+    operations = [next_sample_probs]
+    operations.extend(net.push_ops)
 
     num_waveforms = 1 if global_condition is None else global_condition.shape[0]
     gc = None
@@ -120,8 +109,7 @@ def generate_waveforms(sess, net, fast_generation, global_condition):
         # Generate a waveform for each speaker id.
         print("Generating waveform {}.".format(waveform_index))
         waveforms[waveform_index] = generate_waveform(
-            sess, net, fast_generation, gc, samples_placeholder,
-            gc_placeholder, operations)
+            sess, net, gc, samples_placeholder, gc_placeholder, operations)
 
     return waveforms, global_condition
 

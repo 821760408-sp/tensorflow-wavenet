@@ -163,7 +163,7 @@ def validate_directories(args):
         logdir = get_default_logdir(logdir_root)
         print('Using default logdir: {}'.format(logdir))
     else:
-        logdir = logdir + '-' + STARTED_DATESTRING
+        logdir = os.path.join(LOGDIR_ROOT, logdir, STARTED_DATESTRING)
 
     restore_from = args.restore_from
     if restore_from is None:

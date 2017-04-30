@@ -177,7 +177,7 @@ class TestNet(tf.test.TestCase):
 
         self.optimizer_type = 'sgd'
         self.learning_rate = 0.02
-        self.generate = False
+        self.generate = True
         self.momentum = MOMENTUM
         self.global_conditioning = False
         self.train_iters = TRAIN_ITERATIONS
@@ -191,9 +191,9 @@ class TestNet(tf.test.TestCase):
                                 gc_channels=None,
                                 gc_cardinality=None)
 
-    # def _save_net(sess):
-    #     saver = tf.train.Saver(var_list=tf.trainable_variables())
-    #     saver.save(sess, os.path.join('tmp', 'test.ckpt'))
+    def _save_net(sess):
+        saver = tf.train.Saver(var_list=tf.trainable_variables())
+        saver.save(sess, os.path.join('tmp', 'test.ckpt'))
 
     # Train a net on a short clip of 3 sine waves superimposed
     # (an e-flat chord).
@@ -297,6 +297,7 @@ class TestNet(tf.test.TestCase):
                     # check_waveform(
                     #     self.assertGreater, generated_waveforms[0], None)
                     # Check incremental generation
+                    print("we are getting here")
                     generated_waveforms, _ = generate_waveforms(
                         sess, self.net, True, None)
                     check_waveform(

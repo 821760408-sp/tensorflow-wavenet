@@ -51,7 +51,7 @@ def make_sine_waves(global_conditioning):
                       np.sin(times * 2.0 * np.pi * F3) / 3.0)
         speaker_ids = None
 
-    return amplitudes, speaker_ids, len(times)
+    return amplitudes, speaker_ids
 
 
 def generate_waveform(sess, net, fast_generation, gc, samples_placeholder,
@@ -179,7 +179,7 @@ class TestNet(tf.test.TestCase):
         self.learning_rate = 0.02
         self.generate = True
         self.momentum = MOMENTUM
-        self.global_conditioning = False
+        self.global_conditioning = True  # False
         self.train_iters = TRAIN_ITERATIONS
         self.net = WaveNetModel(batch_size=1,
                                 dilations=[1, 2, 4, 8, 16, 32, 64,
@@ -188,8 +188,8 @@ class TestNet(tf.test.TestCase):
                                 residual_channels=32,
                                 quantization_channels=QUANTIZATION_CHANNELS,
                                 skip_channels=32,
-                                gc_channels=None,
-                                gc_cardinality=None)
+                                gc_channels=3,  # None
+                                gc_cardinality=3)  # None
 
     def _save_net(sess):
         saver = tf.train.Saver(var_list=tf.trainable_variables())
@@ -215,7 +215,7 @@ class TestNet(tf.test.TestCase):
             return feed_dict, speaker_index
 
         np.random.seed(42)
-        audio, speaker_ids, length = make_sine_waves(self.global_conditioning)
+        audio, speaker_ids = make_sine_waves(self.global_conditioning)
         # Pad with 0s (silence) times size of the receptive field minus one,
         # because the first sample of the training data is 0 and if the network
         # learns to predict silence based on silence, it will generate only
@@ -233,7 +233,8 @@ class TestNet(tf.test.TestCase):
 
         audio_placeholder = tf.placeholder(dtype=tf.float32,
                                            shape=[1, audio.shape[1], 1])
-        gc_placeholder = tf.placeholder(dtype=tf.int32, shape=[1]) \
+        gc_placeholder = tf.placeholder(dtype=tf.int32,
+                                        shape=[NUM_SPEAKERS, 1]) \
             if self.global_conditioning else None
 
         loss = self.net.loss(input_batch=audio_placeholder,
@@ -277,31 +278,21 @@ class TestNet(tf.test.TestCase):
             if self.generate:
                 # self._save_net(sess)
                 if self.global_conditioning:
-                    # Check non-fast-generated waveform.
-                    generated_waveforms, ids = generate_waveforms(
-                        sess, self.net, False, speaker_ids)
-                    for (waveform, id) in zip(generated_waveforms, ids):
-                        check_waveform(self.assertGreater, waveform, id[0])
-
                     # Check fast-generated wveform.
-                    # generated_waveforms, ids = generate_waveforms(sess,
-                    #     self.net, True, speaker_ids)
-                    # for (waveform, id) in zip(generated_waveforms, ids):
-                    #     print("Checking fast wf for id{}".format(id[0]))
-                    #     check_waveform( self.assertGreater, waveform, id[0])
+                    print("we are getting here")
+                    generated_waveforms, ids = generate_waveforms(sess,
+                        self.net, True, speaker_ids)
+                    for (waveform, id) in zip(generated_waveforms, ids):
+                        print("Checking fast wf for id{}".format(id[0]))
+                        check_waveform( self.assertGreater, waveform, id[0])
 
                 else:
-                    # # Check non-incremental generation
-                    # generated_waveforms, _ = generate_waveforms(
-                    #     sess, self.net, False, None)
-                    # check_waveform(
-                    #     self.assertGreater, generated_waveforms[0], None)
                     # Check incremental generation
-                    print("we are getting here")
                     generated_waveforms, _ = generate_waveforms(
                         sess, self.net, True, None)
                     check_waveform(
                         self.assertGreater, generated_waveforms[0], None)
+
 
 
 # class TestNetWithBiases(TestNet):
@@ -396,5 +387,4 @@ class TestNet(tf.test.TestCase):
 
 
 if __name__ == '__main__':
-    with tf.Graph().as_default() as g:
-        tf.test.main()
+    tf.test.main()

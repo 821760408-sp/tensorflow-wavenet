@@ -273,7 +273,7 @@ class TestNet(tf.test.TestCase):
                     # Check fast-generated wveform.
                     print("we are getting here")
                     generated_waveforms, ids = generate_waveforms(sess,
-                        self.net, True, speaker_ids)
+                        self.net, speaker_ids)
                     for (waveform, id) in zip(generated_waveforms, ids):
                         print("Checking fast wf for id{}".format(id[0]))
                         check_waveform( self.assertGreater, waveform, id[0])
@@ -281,7 +281,7 @@ class TestNet(tf.test.TestCase):
                 else:
                     # Check incremental generation
                     generated_waveforms, _ = generate_waveforms(
-                        sess, self.net, True, None)
+                        sess, self.net, None)
                     check_waveform(
                         self.assertGreater, generated_waveforms[0], None)
 

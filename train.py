@@ -24,25 +24,26 @@ DATA_DIRECTORY = '/scratch/yg1349/solo-piano-classical-corpus'
 LOGDIR_ROOT = './logdir'
 CHECKPOINT_EVERY = 250
 NUM_STEPS = int(2e5)
-LEARNING_RATE_SCHEDULE = {
-    # 0: 2e-4,
-    # 90000: 4e-4 / 3,
-    # 120000: 6e-5,
-    # 150000: 4e-5,
-    # 180000: 2e-5,
-    # 210000: 6e-6,
-    # 240000: 2e-6,
-    0: 1e-3,
-    10000: 6e-4,
-    30000: 4e-4,
-    60000: 1e-4,
-    90000: 8e-5,
-    120000: 5e-5,
-    150000: 2e-5,
-    180000: 9e-6,
-    210000: 6e-6,
-    240000: 3e-6,
-}
+LEARNING_RATE_TRANSITION_STEPS = [
+    0,
+    10000,
+    30000,
+    60000,
+    90000,
+    120000,
+    150000,
+    180000
+]
+LEARNING_RATE_SCHEDULE = [
+    1e-3,
+    6e-4,
+    4e-4,
+    1e-4,
+    8e-5,
+    5e-5,
+    2e-5,
+    9e-6
+]
 WAVENET_PARAMS = './wavenet_params.json'
 STARTED_DATESTRING = "{0:%Y-%m-%dT%H-%M-%S}".format(datetime.now())
 MOMENTUM = 0.9
@@ -246,10 +247,11 @@ def main():
         initializer=tf.constant_initializer(0),
         trainable=False)
 
+    assert len(LEARNING_RATE_SCHEDULE) == len(LEARNING_RATE_TRANSITION_STEPS)
     lr = tf.constant(LEARNING_RATE_SCHEDULE[0])
-    for key, value in LEARNING_RATE_SCHEDULE.iteritems():
+    for s, v in zip(LEARNING_RATE_TRANSITION_STEPS, LEARNING_RATE_SCHEDULE):
         lr = tf.cond(
-            tf.less(global_step, key), lambda: lr, lambda: tf.constant(value))
+            tf.less(global_step, s), lambda: lr, lambda: tf.constant(v))
     tf.summary.scalar("learning_rate", lr)
 
     optimizer = optimizer_factory[args.optimizer](learning_rate=lr,

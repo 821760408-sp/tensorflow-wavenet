@@ -32,7 +32,9 @@ LEARNING_RATE_TRANSITION_STEPS = [
     90000,
     120000,
     150000,
-    180000
+    180000,
+    210000,
+    240000
 ]
 LEARNING_RATE_SCHEDULE = [
     1e-3,
@@ -42,7 +44,9 @@ LEARNING_RATE_SCHEDULE = [
     8e-5,
     5e-5,
     2e-5,
-    9e-6
+    9e-6,
+    6e-6,
+    3e-6
 ]
 WAVENET_PARAMS = './wavenet_params.json'
 STARTED_DATESTRING = "{0:%Y-%m-%dT%H-%M-%S}".format(datetime.now())

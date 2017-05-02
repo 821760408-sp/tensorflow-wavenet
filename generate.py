@@ -188,6 +188,12 @@ def main():
 
     sess.run(tf.global_variables_initializer())
     sess.run(net.init_ops)
+    # Group the ops we need to run
+    output_ops = [next_sample]
+    output_ops.extend(net.push_ops)
+    # Convert mu-law encoded samples back to (-1, 1) of R
+    QUANTIZATION_CHANNELS = wavenet_params['quantization_channels']
+    decode = mu_law_decode(samples, QUANTIZATION_CHANNELS)
 
     variables_to_restore = {
         var.name[:-2]: var for var in tf.global_variables()
@@ -199,14 +205,10 @@ def main():
         saver.restore(sess, ckpt.model_checkpoint_path)
         print('Restoring model from {}'.format(ckpt.model_checkpoint_path))
 
-    # Convert mu-law encoded samples back to (-1, 1) of R
-    quantization_channels = wavenet_params['quantization_channels']
-    decode = mu_law_decode(samples, quantization_channels)
-
     if args.wav_seed:
         seed = create_seed(args.wav_seed,
                            wavenet_params['sample_rate'],
-                           quantization_channels,
+                           QUANTIZATION_CHANNELS,
                            net.receptive_field)
         waveform = sess.run(seed).tolist()
     else:
@@ -214,8 +216,8 @@ def main():
         # waveform = [quantization_channels / 2] * (net.receptive_field - 1)
         # waveform.append(np.random.randint(quantization_channels))
         waveform = [0] * (net.receptive_field - 1)
-        waveform.append(np.random.randint(-quantization_channels // 2,
-                                          quantization_channels // 2))
+        waveform.append(np.random.randint(-QUANTIZATION_CHANNELS // 2,
+                                          QUANTIZATION_CHANNELS // 2))
 
     if args.lc_embedding is not None:
         lc_embedding = sess.run(lc_embedding)
@@ -227,34 +229,35 @@ def main():
         # TODO This could be done much more efficiently by passing the waveform
         # to the incremental generator as an optional argument, which would be
         # used to fill the queues initially.
-        outputs = [next_sample]
-        outputs.extend(net.push_ops)
 
         print('Priming generation...')
         for i, x in enumerate(waveform[-net.receptive_field: -1]):
             if i % 100 == 0:
                 print('Priming sample {}'.format(i))
             lc_ = lc_embedding[i, :]
-            sess.run(outputs, feed_dict={samples: x, lc: lc_})
+            sess.run(output_ops, feed_dict={samples: x, lc: lc_})
         print('Done.')
 
     last_sample_timestamp = datetime.now()
+    lc_ = None
+    import sys
     for step in range(args.n_samples):
-        # Group the ops we need to run
-        outputs = [next_sample]
-        outputs.extend(net.push_ops)
+        if i % 1000 == 0:
+            print("Generating {} of {}.".format(i, args.n_samples))
+            sys.stdout.flush()
+
         window = waveform[-1]
+
         if args.lc_embedding is not None:
             lc_ = lc_embedding[step, :]
-        else:
-            lc_ = None
 
         # Run the WaveNet to predict the next sample.
+        feed_dict = {samples: window}
         if lc_ is not None:
-            outputs = sess.run(outputs, feed_dict={samples: window, lc: lc_})
-        else:
-            outputs = sess.run(outputs, feed_dict={samples: window})
-        pred = outputs[0]
+            feed_dict['lc'] = lc_
+        results = sess.run(output_ops, feed_dict=feed_dict)
+
+        pred = results[0]
 
         # Scale prediction distribution using temperature.
         np.seterr(divide='ignore')
@@ -276,17 +279,9 @@ def main():
         # sample = np.random.choice(
         #     np.arange(quantization_channels), p=scaled_prediction)
         sample = np.random.choice(
-            np.arange(-quantization_channels // 2, quantization_channels // 2),
+            np.arange(-QUANTIZATION_CHANNELS // 2, QUANTIZATION_CHANNELS // 2),
             p=scaled_prediction)
         waveform.append(sample)
-
-        # Show progress only once per second.
-        current_sample_timestamp = datetime.now()
-        time_since_print = current_sample_timestamp - last_sample_timestamp
-        if time_since_print.total_seconds() > 1.:
-            print('Sample {:3<d}/{:3<d}'.format(step + 1, args.n_samples),
-                  end='\r')
-            last_sample_timestamp = current_sample_timestamp
 
         # If we have partial writing, save the result so far.
         if (args.wav_out_path and args.save_every and

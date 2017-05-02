@@ -254,7 +254,7 @@ def main():
         # Run the WaveNet to predict the next sample.
         feed_dict = {samples: window}
         if lc_ is not None:
-            feed_dict['lc'] = lc_
+            feed_dict[lc] = lc_
         results = sess.run(output_ops, feed_dict=feed_dict)
 
         pred = results[0]

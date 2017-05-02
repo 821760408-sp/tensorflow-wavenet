@@ -23,7 +23,7 @@ BATCH_SIZE = 1
 DATA_DIRECTORY = '/scratch/yg1349/solo-piano-classical-corpus'
 LOGDIR_ROOT = './logdir'
 CHECKPOINT_EVERY = 250
-NUM_STEPS = int(2e5)
+NUM_STEPS = int(3e5)
 LEARNING_RATE_TRANSITION_STEPS = [
     0,
     10000,

@@ -62,7 +62,7 @@ def generate_waveform(sess, net, gc, samples_placeholder,
         feed_dict = {samples_placeholder: [sample]}
         if gc is not None:
             feed_dict[gc_placeholder] = gc
-            sess.run(operations, feed_dict=feed_dict)
+        sess.run(operations, feed_dict=feed_dict)
 
     for i in range(GENERATE_SAMPLES):
         if i % 100 == 0:

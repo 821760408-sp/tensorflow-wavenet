@@ -242,7 +242,7 @@ def main():
     lc_ = None
     import sys
     for step in range(args.n_samples):
-        if i % 1000 == 0:
+        if step % 1000 == 0:
             print("Generating {} of {}.".format(i, args.n_samples))
             sys.stdout.flush()
 

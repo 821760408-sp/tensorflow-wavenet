@@ -243,7 +243,7 @@ def main():
     import sys
     for step in range(args.n_samples):
         if step % 1000 == 0:
-            print("Generating {} of {}.".format(i, args.n_samples))
+            print("Generating {} of {}.".format(step, args.n_samples))
             sys.stdout.flush()
 
         window = waveform[-1]

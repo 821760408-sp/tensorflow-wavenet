@@ -22,16 +22,16 @@ class TestGeneration(tf.test.TestCase):
         perform sanity checks on the output.'''
         waveform = tf.placeholder(tf.int32)
         np.random.seed(0)
-        data = np.random.randint(128)
+        data = np.random.randint(-128, 128)
         proba = self.net.predict_proba_incremental(waveform)
 
         with self.test_session() as sess:
-            sess.run(tf.initialize_all_variables())
+            sess.run(tf.global_variables_initializer())
             sess.run(self.net.init_ops)
             proba = sess.run(proba, feed_dict={waveform: data})
 
-        self.assertAllEqual(proba.shape, [128])
-        self.assertTrue(np.all((proba >= 0) & (proba <= (128 - 1))))
+        self.assertAllEqual(proba.shape, [256])
+        self.assertTrue(np.all((proba >= -128) & (proba <= (128 - 1))))
 
 
 if __name__ == '__main__':

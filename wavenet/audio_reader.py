@@ -75,7 +75,6 @@ def not_all_have_id(files):
     return False
 
 
-# https://www.tensorflow.org/api_guides/python/io_ops
 class AudioReader(object):
     """Generic background audio reader that preprocesses audio files
     and enqueues them into a TensorFlow queue."""
@@ -106,7 +105,7 @@ class AudioReader(object):
         self.gc_enabled = self.gc_channels or None
         self.lc_enabled = self.lc_channels or None
         self.threads = []
-        # Run the Reader on the CPU
+        # Run the Reader on CPU
         with tf.device('/cpu:0'):
             self.queue_audio = tf.placeholder(dtype=tf.float32,
                                               shape=[self.sample_size, 1])
@@ -116,6 +115,7 @@ class AudioReader(object):
 
             self.queue_lc = tf.placeholder(
                 dtype=tf.float32,
+                # Correspond to librosa.piptrack
                 shape=[np.ceil(self.sample_size / 512 + 1).astype(np.int32),
                        self.lc_channels])
 
@@ -125,7 +125,6 @@ class AudioReader(object):
                 dtypes=[tf.float32, tf.int32, tf.float32],
                 shapes=[[self.sample_size, 1],
                         [],
-                        # this is really how librosa calculate length of piptrack
                         [np.ceil(self.sample_size / 512 + 1).astype(np.int32),
                          self.lc_channels]])
 
@@ -193,13 +192,11 @@ class AudioReader(object):
                 sess.run(self.enqueue_op, feed_dict={self.queue_audio: crop,
                                                      self.queue_gc: category_id,
                                                      self.queue_lc: lc})
-                # ENABLE this for debug purpose
-                # print("----------------> ADDED TO QUEUE")
 
     @staticmethod
     def midi_notes_encoding(audio):
-        """Compute frame-based midi encoding of audio
-        
+        """
+        Compute frame-based midi encoding of audio
         :param audio: 1-D array of audio time series 
         """
         pitches, magnitudes = librosa.piptrack(audio)

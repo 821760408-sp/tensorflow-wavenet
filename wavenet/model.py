@@ -3,7 +3,7 @@ from __future__ import division
 import numpy as np
 import tensorflow as tf
 
-from .ops import mu_law_encode, mu_law_decode, conv1d, shift_right
+from .ops import mu_law_encode, conv1d, shift_right
 
 
 def create_embedding_table(name, shape):
@@ -446,7 +446,6 @@ class WaveNetModel(object):
             pp_biases = self.variables['postprocessing']['biases']
             skip_connection = conv1d(skip_connection, pp_weights, pp_biases)
 
-        # TODO: explain why
         if lc_batch is not None:
             lc_weights = self.variables['lc_conv_out']['weights']
             lc_biases = self.variables['lc_conv_out']['biases']
@@ -550,27 +549,10 @@ class WaveNetModel(object):
         dilation_out = self._generator_conv(input_batch, state_batch,
                                             weights, biases)
 
-        # weights_filter = variables['filter']
-        # weights_gate = variables['gate']
-        # output_filter = self._generator_conv(
-        #     input_batch, state_batch, weights_filter)
-        # output_gate = self._generator_conv(
-        #     input_batch, state_batch, weights_gate)
-
         if lc_batch is not None:
-            # shape=1, self.lc_channels, 2*self.residual_channels
             lc_weights = variables['lc_conv']['weights']
             lc_biases = variables['lc_conv']['biases']
             lc_weights = lc_weights[0, :, :]
-            # lc_biases = lc_biases[0, :, :]
-            # TODO: shape lc_batch (should be [1, 88], where `1` is time?)
-            # lc_batch = tf.reshape(lc_batch, shape=(1, -1))
-            # weights_lc_filter = variables['lc_filtweights']
-            # weights_lc_filter = weights_lc_filter[0, :, :]
-            # weights_lc_gate = variables['lc_gateweights']
-            # weights_lc_gate = weights_lc_gate[0, :, :]
-            # output_filter += causal_conv(lc_batch, weights_lc_filter, dilation)
-            # output_gate += causal_conv(lc_batch, weights_lc_gate, dilation)
             dilation_out += tf.matmul(lc_batch, lc_weights)
             dilation_out = tf.nn.bias_add(dilation_out, lc_biases)
 
@@ -578,36 +560,20 @@ class WaveNetModel(object):
             gc_weights = variables['gc_conv']['weights']
             gc_biases = variables['gc_conv']['biases']
             gc_weights = gc_weights[0, :, :]
-            # gc_biases = gc_biases[0, :, :]
 
             dilation_out += tf.matmul(gc_batch, gc_weights)
             dilation_out = tf.nn.bias_add(dilation_out, gc_biases)
-
-            # weights_gc_filter = variables['gc_filtweights']
-            # weights_gc_filter = weights_gc_filter[0, :, :]
-            # output_filter += tf.matmul(gc_batch,
-            #                            weights_gc_filter)
-            # weights_gc_gate = variables['gc_gateweights']
-            # weights_gc_gate = weights_gc_gate[0, :, :]
-            # output_gate += tf.matmul(gc_batch,
-            #                          weights_gc_gate)
-
-        # if self.use_biases:
-        #     output_filter = output_filter + variables['filter_bias']
-        #     output_gate = output_gate + variables['gate_bias']
 
         assert dilation_out.get_shape().as_list()[1] % 2 == 0
         m = dilation_out.get_shape().as_list()[1] // 2
         do_sigmoid = tf.sigmoid(dilation_out[:, :m])  # sigmoid is for gate
         do_tanh = tf.tanh(dilation_out[:, m:])  # tanh is for filter
         dilation_out = do_sigmoid * do_tanh
-        # out = tf.tanh(output_filter) * tf.sigmoid(output_gate)
 
         # The 1x1 conv to produce the residual output
         res_weights = variables['residual_conv']['weights']
         res_biases = variables['residual_conv']['biases']
         res_weights = res_weights[0, :, :]
-        # res_biases = res_biases[0, :, :]
 
         input_batch += tf.matmul(dilation_out, res_weights)
         input_batch = tf.nn.bias_add(input_batch, res_biases)
@@ -619,16 +585,6 @@ class WaveNetModel(object):
         # skip_biases = skip_biases[0, :, :]
         skip_connection = tf.matmul(dilation_out, skip_weights)
         skip_connection = tf.nn.bias_add(skip_connection, skip_biases)
-
-        # weights_dense = variables['dense']
-        # transformed = tf.matmul(out, weights_dense[0, :, :])
-        # if self.use_biases:
-        #     transformed = transformed + variables['dense_bias']
-        #
-        # weights_skip = variables['skip']
-        # skip_contribution = tf.matmul(out, weights_skip[0, :, :])
-        # if self.use_biases:
-        #     skip_contribution = skip_contribution + variables['skip_bias']
 
         return skip_connection, input_batch
 
@@ -696,29 +652,13 @@ class WaveNetModel(object):
             pp_weights = self.variables['postprocessing']['weights']
             pp_weights = pp_weights[0, :, :]
             pp_biases = self.variables['postprocessing']['biases']
-            # pp_biases = pp_biases[0, :, :]
             skip_connection = tf.matmul(skip_connection, pp_weights)
             skip_connection = tf.nn.bias_add(skip_connection, pp_biases)
-
-            # variables = self.variables['postprocessing']
-            # # Perform (+) -> ReLU -> 1x1 conv -> ReLU -> 1x1 conv to
-            # # postprocess the output.
-            # w1 = variables['postprocess1']
-            # w2 = variables['postprocess2']
-            # if self.use_biases:
-            #     b1 = variables['postprocess1_bias']
-            #     b2 = variables['postprocess2_bias']
-
-            # # We skip connections from the outputs of each layer, adding them
-            # # all up here.
-            # total = sum(outputs)
-            # transformed1 = tf.nn.relu(total)
 
             if lc_batch is not None:
                 lc_weights = self.variables['lc_conv_out']['weights']
                 lc_biases = self.variables['lc_conv_out']['biases']
                 lc_weights = lc_weights[0, :, :]
-                # lc_biases = lc_biases[0, :, :]
                 skip_connection += tf.matmul(lc_batch, lc_weights)
                 skip_connection = tf.nn.bias_add(skip_connection, lc_biases)
 
@@ -726,7 +666,6 @@ class WaveNetModel(object):
                 gc_weights = self.variables['gc_conv_out']['weights']
                 gc_biases = self.variables['gc_conv_out']['biases']
                 gc_weights = gc_weights[0, :, :]
-                # gc_biases = gc_biases[0, :, :]
                 skip_connection += tf.matmul(gc_batch, gc_weights)
                 skip_connection = tf.nn.bias_add(skip_connection, gc_biases)
 
@@ -736,19 +675,8 @@ class WaveNetModel(object):
             logit_weights = self.variables['logit']['weights']
             logit_biases = self.variables['logit']['biases']
             logit_weights = logit_weights[0, :, :]
-            # logit_biases = logit_biases[0, :, :]
             logits = tf.matmul(skip_connection, logit_weights)
             logits = tf.nn.bias_add(logits, logit_biases)
-
-            # logits = tf.reshape(logits, [-1, 256])
-            #
-            # conv1 = tf.matmul(transformed1, w1[0, :, :])
-            # if self.use_biases:
-            #     conv1 = conv1 + b1
-            # transformed2 = tf.nn.relu(conv1)
-            # conv2 = tf.matmul(transformed2, w2[0, :, :])
-            # if self.use_biases:
-            #     conv2 = conv2 + b2
 
         return logits
 

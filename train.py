@@ -203,7 +203,6 @@ def main():
     with open(args.wavenet_params, 'r') as f:
         wavenet_params = json.load(f)
 
-    # with tf.Graph().as_default():
     # Set up session
     sess = tf.Session()
 

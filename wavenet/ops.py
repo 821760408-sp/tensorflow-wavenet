@@ -25,7 +25,7 @@ optimizer_factory = {'adam': create_adam_optimizer,
                      'rmsprop': create_rmsprop_optimizer}
 
 
-# https://github.com/tensorflow/magenta/blob/master/magenta/models/nsynth/wavenet/masked.py#L53
+# tensorflow/magenta/blob/master/magenta/models/nsynth/wavenet/masked.py#L53
 def time_to_batch(x, dilation):
     with tf.name_scope('time_to_batch'):
         shape = x.get_shape().as_list()
@@ -44,7 +44,7 @@ def time_to_batch(x, dilation):
         return y
 
 
-# https://github.com/tensorflow/magenta/blob/master/magenta/models/nsynth/wavenet/masked.py#L85
+# tensorflow/magenta/blob/master/magenta/models/nsynth/wavenet/masked.py#L85
 def batch_to_time(x, dilation):
     with tf.name_scope('batch_to_time'):
         shape = x.get_shape().as_list()
@@ -57,7 +57,7 @@ def batch_to_time(x, dilation):
         return y
 
 
-# https://github.com/tensorflow/magenta/blob/master/magenta/models/nsynth/wavenet/masked.py#L106
+# tensorflow/magenta/blob/master/magenta/models/nsynth/wavenet/masked.py#L106
 def conv1d(x, filt, biases, dilation=1, causal=True):
     """Fast 1D convolution that supports causal padding and dilation.
     
@@ -86,7 +86,7 @@ def conv1d(x, filt, biases, dilation=1, causal=True):
     return y
 
 
-# https://github.com/tensorflow/magenta/blob/master/magenta/models/nsynth/utils.py#L64
+# tensorflow/magenta/blob/master/magenta/models/nsynth/utils.py#L64
 def mu_law_encode(audio, quantization_channels=256):
     """Quantizes waveform amplitudes."""
     with tf.name_scope('encode'):
@@ -96,7 +96,7 @@ def mu_law_encode(audio, quantization_channels=256):
         return out
 
 
-# https://github.com/tensorflow/magenta/blob/master/magenta/models/nsynth/utils.py#L79
+# tensorflow/magenta/blob/master/magenta/models/nsynth/utils.py#L79
 def mu_law_decode(x, quantization_channels=256):
     """Recovers waveform from quantized values."""
     with tf.name_scope('decode'):
@@ -108,7 +108,7 @@ def mu_law_decode(x, quantization_channels=256):
         return out
 
 
-# https://github.com/tensorflow/magenta/blob/master/magenta/models/nsynth/wavenet/masked.py#L36
+# tensorflow/magenta/blob/master/magenta/models/nsynth/wavenet/masked.py#L36
 def mul_or_none(a, b):
     """Return the element wise multiplicative of the inputs.
   
@@ -126,7 +126,7 @@ def mul_or_none(a, b):
     return a * b
 
 
-# https://github.com/tensorflow/magenta/blob/master/magenta/models/nsynth/wavenet/masked.py#L20
+# tensorflow/magenta/blob/master/magenta/models/nsynth/wavenet/masked.py#L20
 def shift_right(x):
     """Shift the input over by one and a zero to the front.
   

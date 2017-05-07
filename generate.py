@@ -171,10 +171,10 @@ def main():
     lc = tf.placeholder(tf.float32) if args.lc_embedding else None
     gc = args.gc_id or None
 
-    # TODO: right now we pre-save lc embeddings in the same length
+    # TODO: right now we pre-calculated lc embeddings of the same length
     # as the audio we'd like to generate so they're naturally algined.
-    # Add functionality to load `args.n_samples` worth of embeddings
-    # from pre-saved (full-length) embeddings.
+    # Add function to load a length of `args.n_samples` of embeddings
+    # from pre-calculated (full-length) embeddings.
     if args.lc_embedding is not None:
         lc_embedding = load_lc_embedding(args.lc_embedding)
         lc_embedding = tf.convert_to_tensor(lc_embedding)
@@ -182,8 +182,6 @@ def main():
         lc_embedding = net._enc_upsampling_conv(lc_embedding, args.n_samples)
         lc_embedding = tf.reshape(lc_embedding, [-1, args.lc_channels])
 
-    # TODO: verify this implementation vs orig. Github
-    # shape: [self.quantization_channels]
     next_sample = net.predict_proba_incremental(samples, gc, lc)
 
     sess.run(tf.global_variables_initializer())
@@ -213,8 +211,6 @@ def main():
         waveform = sess.run(seed).tolist()
     else:
         # Silence with a single random sample at the end.
-        # waveform = [quantization_channels / 2] * (net.receptive_field - 1)
-        # waveform.append(np.random.randint(quantization_channels))
         waveform = [0] * (net.receptive_field - 1)
         waveform.append(np.random.randint(-QUANTIZATION_CHANNELS // 2,
                                           QUANTIZATION_CHANNELS // 2))
@@ -275,9 +271,6 @@ def main():
                 err_msg='Prediction scaling at temperature=1.0 '
                         'is not working as intended.')
 
-        # TODO: verify
-        # sample = np.random.choice(
-        #     np.arange(quantization_channels), p=scaled_prediction)
         sample = np.random.choice(
             np.arange(-QUANTIZATION_CHANNELS // 2, QUANTIZATION_CHANNELS // 2),
             p=scaled_prediction)

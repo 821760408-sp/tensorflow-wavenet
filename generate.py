@@ -215,9 +215,7 @@ def main():
                            wavenet_params['sample_rate'],
                            QUANTIZATION_CHANNELS,
                            net.receptive_field)
-        # FIXME: see line 138
-        # waveform = sess.run(seed).tolist()
-        waveform = seed
+        waveform = sess.run(seed).tolist()
     else:
         # Silence with a single random sample at the end.
         waveform = [0] * (net.receptive_field - 1)
